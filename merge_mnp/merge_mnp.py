@@ -68,7 +68,10 @@ def ifmerge(v1, v2):
     pid2 = v2.samples[0].get("PID", "")
     pgt1 = v1.samples[0].get("PGT", "")
     pgt2 = v2.samples[0].get("PGT", "")
-    if pid1 == pid2 and pgt1 == pgt2 and pid1 != "" and pgt1 != "":
+    #or the same PS to support use case of VCF coming from whatshap
+    ps1 = v1.samples[0].get("PS", "")
+    ps2 = v2.samples[0].get("PS", "")
+    if (pid1 == pid2 and pgt1 == pgt2 and pid1 != "" and pgt1 != "") or (ps1 == ps2 and ps1 != ""):
         if custom_merge is not None:
             return custom_merge.is_merge(v1, v2)
         return True
