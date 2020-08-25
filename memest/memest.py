@@ -405,7 +405,7 @@ def main():
             d = density.setdefault(tchr,[])
             if len(d) < len(dens):
                 d.extend([0] * (len(dens)-len(d)))
-            for i in xrange(len(d)):
+            for i in xrange(len(dens)):
                 d[i] += dens[i]
             chroms[tchr] = max(chroms.get(tchr,0), tlen)
     chr_tid = dict((chr[0],i) for i, chr in enumerate(hdr.chrs))
