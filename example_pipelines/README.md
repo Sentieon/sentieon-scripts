@@ -1,4 +1,4 @@
-# Example Pipelines With the Sentieon tools#
+# Example Pipelines With the Sentieon tools #
 
 Example Sentieon pipelines implemented in shell script. You may modify these pipelines to work with your existing bioinformatics infrastructure.
 
