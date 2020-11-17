@@ -17,9 +17,11 @@ See Sentieon's [Argument Correspondence application note][correspondence] for in
     - [default][tnscope] - Standard somatic variant calling with TNscope.
     - [50x to 100x][50x] - Somatic variant calling with TNscope. Recommended settings for 50x to 100x coverage.
     - [300x or greater][300x] - Somatic variant calling with TNscope. Recommended settings for coverage over 300x.
+    - [unique molecular identifier (UMI)][umi] - Somatic variant calling and filtering of UMI-tagged reads.
   - *TNseq* - Pipelines matching best practice implementations for somatic variant calling.
     - [tumor-normal][tn-paired] - Somatic variant calling with TNsnv and TNhaplotyper from paired tumor-normal samples.
     - [tumor-only][tumor-only] - Somatic variant calling with TNsnv and TNhaplotyper from tumor-only samples.
+    - [TNhaplotyper2][tnhap2] - Somatic variant calling with TNhaplotyper2.
 
 [correspondence]: https://support.sentieon.com/appnotes/arguments/
 [wgs]: germline/wgs.sh
@@ -33,5 +35,7 @@ See Sentieon's [Argument Correspondence application note][correspondence] for in
 [tnscope]: somatic/TNscope/default.sh
 [50x]: somatic/TNscope/50x_to_100x.sh
 [300x]: somatic/TNscope/300x_or_greater.sh
+[umi]: somatic/TNscope/umi.sh
 [tn-paired]: somatic/TNseq/tumor_normal.sh
 [tumor-only]: somatic/TNseq/tumor_only.sh
+[tnhap2]: somatic/TNseq/TNhaplotyper2.sh
