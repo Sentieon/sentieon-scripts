@@ -49,8 +49,26 @@ $SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert output.vcf output.vcf.gz
 ```
 
 ### Example Usage - Merging only variants within the same codon ###
+#### Creating a codons.txt file ####
+The `codons.txt` file is a tab-delimited user-supplied file containing a locus (in `<CHROM>:<POS>` format)
+and a codon-ID, that is unique for each codon. Users might use their own resources to create this file,
+but we provide the following directions and awk script for convenience:
+
+- Download a BED file of RefSeq transcripts from the UCSC Table Browser.
+  - Go to https://genome.ucsc.edu/cgi-bin/hgTables and:
+    - Set group at "Genes and Gene Predictions".
+    - Set track to "NCBI RefSeq?".
+    - Set table to "RefSeq? Curated (ncbiRefSeqCurated)"
+    - Set output format to "BED - browser extensible data"
+  - Or use the direct link for hg38 - https://genome.ucsc.edu/cgi-bin/hgTables?hgsid=961881833_BPsmSsIoBe8MFwDPEAlJlo9HVZCm&clade=mammal&org=Human&db=hg38&hgta_group=genes&hgta_track=refSeqComposite&hgta_table=ncbiRefSeqCurated&hgta_regionType=genome&hgta_outputType=bed
+  - Press Get output
+  - In the next panel, select "Coding Exons"
+  - Press get BED and download the output file
+- Pass the downloaded BED file to the supplied awk script:
+  `cat <BED> | awk -f mnp_with_codons-create_codon_file.awk > codons.txt`
+
+#### Usage ####
 ```
-zcat GRCh38_ucsc_refseq_good_transcripts.noALT.bed.zip |awk -f merge_by_codon-preprocess_codon_file.awk > codons.txt
 export PYTHONPATH="$SENTIEON_INSTALL_DIR/lib/python/sentieon":"$PYTHONPATH"
 python merge_mnp.py input.vcf[.gz] ucsc.hg19.fasta merge_by_codon codons.txt 1> output_noINDEL.vcf
 $SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert output_noINDEL.vcf output_noINDEL.vcf.gz

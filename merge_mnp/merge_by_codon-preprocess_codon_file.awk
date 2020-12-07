@@ -29,14 +29,17 @@
 {
 	#read exon line
 	transcript=$4;chr=$1;start=$2;end=$3;
+	#Need to do this because the NCBI RefSeq Curated table in https://genome.ucsc.edu/cgi-bin/hgTable has changed the transcriptID format
+	split(transcript,v,".");transcript=v[1]
 	#check if new transcript
 	if (transcript != current_transcript)
 	{
 		#make sure last codon finished in the exon, otherwise error out
 		if (codon_end != previous_end)
 		{
-			print "Error, transcript "current_transcript" did not end in a complete codon"
-			exit
+			print "Error, transcript "current_transcript" in "chr" did not end in a complete codon; the last bases of the transcript will not be included in a codon." > "/dev/stderr"
+			#Do not exit as the latest version of the NCBI RefSeq Curated table in https://genome.ucsc.edu/cgi-bin/hgTable has transcripts containing a number of bases not multiple of 3
+			#exit
 		}
 		#set new info
 		codon_start=start+1
