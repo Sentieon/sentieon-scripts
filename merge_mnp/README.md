@@ -50,7 +50,7 @@ $SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert output.vcf output.vcf.gz
 
 ### Example Usage - Merging only variants within the same codon ###
 #### Creating a codons.txt file ####
-The `codons.txt` file is a tab-delimited user-supplied file containing a locus (in `<CHROM>:<POS>` format)
+The `codons.txt` file is a tab-delimited, user-supplied file containing a locus (in `<CHROM>:<POS>` format)
 and a codon-ID, that is unique for each codon. Users might use their own resources to create this file,
 but we provide the following directions and awk script for convenience:
 
@@ -60,7 +60,9 @@ but we provide the following directions and awk script for convenience:
     - Set track to "NCBI RefSeq?".
     - Set table to "RefSeq? Curated (ncbiRefSeqCurated)"
     - Set output format to "BED - browser extensible data"
-  - Or use the direct link for hg38 - https://genome.ucsc.edu/cgi-bin/hgTables?hgsid=961881833_BPsmSsIoBe8MFwDPEAlJlo9HVZCm&clade=mammal&org=Human&db=hg38&hgta_group=genes&hgta_track=refSeqComposite&hgta_table=ncbiRefSeqCurated&hgta_regionType=genome&hgta_outputType=bed
+  - Or use a direct link:
+    - hg38 - https://genome.ucsc.edu/cgi-bin/hgTables?hgsid=961881833_BPsmSsIoBe8MFwDPEAlJlo9HVZCm&clade=mammal&org=Human&db=hg38&hgta_group=genes&hgta_track=refSeqComposite&hgta_table=ncbiRefSeqCurated&hgta_regionType=genome&hgta_outputType=bed&hgta_outFileName=hg38_transcripts
+    - hg19 - https://genome.ucsc.edu/cgi-bin/hgTables?hgsid=961881833_BPsmSsIoBe8MFwDPEAlJlo9HVZCm&clade=mammal&org=&db=hg19&hgta_group=genes&hgta_track=refSeqComposite&hgta_table=ncbiRefSeqCurated&hgta_regionType=genome&position=&hgta_outputType=bed&hgta_outFileName=hg19_transcripts
   - Press Get output
   - In the next panel, select "Coding Exons"
   - Press get BED and download the output file
