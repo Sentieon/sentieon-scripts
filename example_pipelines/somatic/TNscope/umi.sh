@@ -69,7 +69,6 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i umi_consensus.bam 
     --min_tumor_allele_frac 0.0003 \
     --filter_t_alt_frac 0.0003 \
     --max_error_per_read 3 \
-    --min_init_tumor_lod 3.0 \
     --min_tumor_lod 3.0 \
     --min_base_qual 40 \
     --min_base_qual_asm 40 \
