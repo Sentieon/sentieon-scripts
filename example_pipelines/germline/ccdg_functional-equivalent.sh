@@ -67,7 +67,8 @@ fi
 # ******************************************
 # 2. Mark Duplicates with Sentieon
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo LocusCollector --fun score_info score.txt
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo LocusCollector \
+    --fun score_info score.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup --score_info score.txt \
    --metrics mark_dup_metrics.txt --output_dup_read_name tmp_dup_qname.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup \
@@ -87,4 +88,5 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i markduped.bam \
 # ******************************************
 # 4. Haplotyper with Sentieon
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i recaled_RW.cram --algo Haplotyper Haplotyper.vcf.gz
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i recaled_RW.cram --algo Haplotyper \
+    Haplotyper.vcf.gz

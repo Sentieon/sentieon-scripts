@@ -50,17 +50,24 @@ cd $WORKDIR
 if [ "$DUPLEX_UMI" = "true" ] ; then
     READ_STRUCTURE="-d $READ_STRUCTURE"
 fi
-( $SENTIEON_INSTALL_DIR/bin/sentieon umi extract $READ_STRUCTURE $TUMOR_FASTQ_1 $TUMOR_FASTQ_2 || ( echo -n 'error' >&2; exit -1 ) ) | \
-( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C -M -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT -K 10000000 $FASTA - || echo -n 'error' ) | \
-$SENTIEON_INSTALL_DIR/bin/sentieon umi consensus -o umi_consensus.fastq.gz
-( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C -M -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT -K 10000000 $FASTA umi_consensus.fastq.gz || echo -n 'error' ) | \
-$SENTIEON_INSTALL_DIR/bin/sentieon util sort --umi_post_process --sam2bam -i - -o umi_consensus.bam
+( $SENTIEON_INSTALL_DIR/bin/sentieon umi extract $READ_STRUCTURE $TUMOR_FASTQ_1 $TUMOR_FASTQ_2 || \
+    ( echo -n 'error' >&2; exit -1 ) ) | \
+  ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C -M \
+  -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT \
+  -K 10000000 $FASTA - || echo -n 'error' ) | \
+  $SENTIEON_INSTALL_DIR/bin/sentieon umi consensus -o umi_consensus.fastq.gz
+( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C -M \
+    -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT -K 10000000 \
+    $FASTA umi_consensus.fastq.gz || echo -n 'error' ) | \
+    $SENTIEON_INSTALL_DIR/bin/sentieon util sort --umi_post_process --sam2bam -i - \
+    -o umi_consensus.bam
 
 # ******************************************
 # 2. Somatic and Structural variant calling
 # ******************************************
 # Consider adding `--disable_detector sv --trim_soft_clip` if not interested in SV calling
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i umi_consensus.bam ${INTERVAL_FILE:+--interval_padding 10 --interval $INTERVAL_FILE} \
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i umi_consensus.bam \
+    ${INTERVAL_FILE:+--interval_padding 10 --interval $INTERVAL_FILE} \
     --algo TNscope \
     --tumor_sample $TUMOR_SM \
     --dbsnp $KNOWN_DBSNP \

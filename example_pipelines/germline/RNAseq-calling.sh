@@ -61,17 +61,24 @@ if [ -z "$STAR_FASTA" ]; then
   STAR_FASTA="genomeDir"
   # The genomeDir generation could be reused
   mkdir $star_fasta
-  $STAR_BINARY --runMode genomeGenerate --genomeDir $STAR_FASTA --genomeFastaFiles $FASTA --runThreadN $NT
+  $STAR_BINARY --runMode genomeGenerate --genomeDir $STAR_FASTA --genomeFastaFiles $FASTA \
+      --runThreadN $NT
 fi
 #perform the actual alignment and sorting
-$STAR_BINARY --twopassMode Basic --genomeDir $STAR_FASTA --runThreadN $NT --outSAMtype BAM SortedByCoordinate --twopass1readsN -1 --sjdbOverhang 75 --readFilesIn $FASTQ_1 $FASTQ_2 --readFilesCommand zcat --outSAMattrRGline ID:$RGID SM:$SM PL:$PL
+$STAR_BINARY --twopassMode Basic --genomeDir $STAR_FASTA --runThreadN $NT --outSAMtype BAM \
+    SortedByCoordinate --twopass1readsN -1 --sjdbOverhang 75 --readFilesIn $FASTQ_1 $FASTQ_2 \
+    --readFilesCommand zcat --outSAMattrRGline ID:$RGID SM:$SM PL:$PL
 mv Aligned.sortedByCoord.out.bam sorted.bam
 $SENTIEON_INSTALL_DIR/bin/sentieon util index sorted.bam
 
 # ******************************************
 # 2. Metrics
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT -i sorted.bam --algo MeanQualityByCycle mq_metrics.txt --algo QualDistribution qd_metrics.txt --algo GCBias --summary gc_summary.txt gc_metrics.txt --algo AlignmentStat --adapter_seq '' aln_metrics.txt --algo InsertSizeMetricAlgo is_metrics.txt
+$SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT \
+    -i sorted.bam --algo MeanQualityByCycle mq_metrics.txt --algo QualDistribution \
+    qd_metrics.txt --algo GCBias --summary gc_summary.txt gc_metrics.txt \
+    --algo AlignmentStat --adapter_seq '' aln_metrics.txt --algo InsertSizeMetricAlgo \
+    is_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot GCBias -o gc-report.pdf gc_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualDistribution -o qd-report.pdf qd_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot MeanQualityByCycle -o mq-report.pdf mq_metrics.txt
@@ -82,29 +89,39 @@ $SENTIEON_INSTALL_DIR/bin/sentieon plot InsertSizeMetricAlgo -o is-report.pdf is
 # to remove instead of mark duplicates
 # by adding the --rmdup option in Dedup
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo LocusCollector --fun score_info score.txt
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup --score_info score.txt --metrics dedup_metrics.txt deduped.bam 
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo LocusCollector \
+    --fun score_info score.txt
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup \
+    --score_info score.txt --metrics dedup_metrics.txt deduped.bam
 
 # ******************************************
 # 2a. Coverage metrics
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam --algo CoverageMetrics coverage_metrics
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam \
+    --algo CoverageMetrics coverage_metrics
 
 # ******************************************
 # 4. Split reads at Junction
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam --algo RNASplitReadsAtJunction --reassign_mapq 255:60 splitted.bam
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam \
+    --algo RNASplitReadsAtJunction --reassign_mapq 255:60 splitted.bam
 
 # ******************************************
 # 6. Base recalibration
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT -i splitted.bam --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS recal_data.table
-$SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT -i splitted.bam -q recal_data.table --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS recal_data.table.post
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot --before recal_data.table --after recal_data.table.post recal.csv
+$SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT \
+    -i splitted.bam --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS \
+    recal_data.table
+$SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT \
+    -i splitted.bam -q recal_data.table --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS \
+    -k $KNOWN_INDELS recal_data.table.post
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
+    --before recal_data.table --after recal_data.table.post recal.csv
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o recal_plots.pdf recal.csv
 
 # ******************************************
 # 7. HC Variant caller for RNA
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT -i splitted.bam -q recal_data.table --algo Haplotyper -d $KNOWN_DBSNP --trim_soft_clip --emit_conf=20 --call_conf=20 output-hc-rna.vcf.gz
-
+$SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT \
+    -i splitted.bam -q recal_data.table --algo Haplotyper -d $KNOWN_DBSNP \
+    --trim_soft_clip --emit_conf=20 --call_conf=20 output-hc-rna.vcf.gz

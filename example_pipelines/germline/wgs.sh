@@ -52,12 +52,18 @@ cd $WORKDIR
 # 1. Mapping reads with BWA-MEM, sorting
 # ******************************************
 #The results of this call are dependent on the number of threads used. To have number of threads independent results, add chunk size option -K 10000000 
-( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -M -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" -t $NT -K 10000000 $FASTA $FASTQ_1 $FASTQ_2 || echo -n 'error' ) | $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam -t $NT --sam2bam -i -
+( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -M -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" \
+    -t $NT -K 10000000 $FASTA $FASTQ_1 $FASTQ_2 || echo -n 'error' ) | \
+    $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam -t $NT \
+    --sam2bam -i -
 
 # ******************************************
 # 2. Metrics
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i sorted.bam --algo MeanQualityByCycle mq_metrics.txt --algo QualDistribution qd_metrics.txt --algo GCBias --summary gc_summary.txt gc_metrics.txt --algo AlignmentStat --adapter_seq '' aln_metrics.txt --algo InsertSizeMetricAlgo is_metrics.txt
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i sorted.bam \
+    --algo MeanQualityByCycle mq_metrics.txt --algo QualDistribution qd_metrics.txt \
+    --algo GCBias --summary gc_summary.txt gc_metrics.txt --algo AlignmentStat \
+    --adapter_seq '' aln_metrics.txt --algo InsertSizeMetricAlgo is_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot GCBias -o gc-report.pdf gc_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualDistribution -o qd-report.pdf qd_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot MeanQualityByCycle -o mq-report.pdf mq_metrics.txt
@@ -68,21 +74,27 @@ $SENTIEON_INSTALL_DIR/bin/sentieon plot InsertSizeMetricAlgo -o is-report.pdf is
 # to remove instead of mark duplicates
 # by adding the --rmdup option in Dedup
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo LocusCollector --fun score_info score.txt
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup --score_info score.txt --metrics dedup_metrics.txt deduped.bam 
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo LocusCollector \
+    --fun score_info score.txt
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup \
+    --score_info score.txt --metrics dedup_metrics.txt deduped.bam
 
 # ******************************************
 # 5. Base recalibration
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS recal_data.table
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS recal_data.table.post
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot --before recal_data.table --after recal_data.table.post recal.csv   
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam --algo QualCal \
+    -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS recal_data.table
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table \
+    --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS recal_data.table.post
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
+    --before recal_data.table --after recal_data.table.post recal.csv
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o recal_plots.pdf recal.csv
 
 # ******************************************
 # 6b. HC Variant caller
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table --algo Haplotyper -d $KNOWN_DBSNP output-hc.vcf.gz
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table \
+    --algo Haplotyper -d $KNOWN_DBSNP output-hc.vcf.gz
 
 # ******************************************
 # 5b. ReadWriter to output recalibrated bam
@@ -91,5 +103,5 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q rec
 # using the before recalibration bam plus
 # the recalibration table
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table --algo ReadWriter recaled.bam
-
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table \
+    --algo ReadWriter recaled.bam
