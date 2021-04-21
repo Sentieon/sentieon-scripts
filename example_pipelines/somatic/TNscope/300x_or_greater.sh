@@ -39,13 +39,13 @@ export SENTIEON_LICENSE=/home/Licenses/Sentieon.lic #or using licsrvr: c1n11.sen
 NT=$(nproc) #number of threads to use in computation, set to number of cores in the server
 START_DIR="$PWD/test/TNscope_highcov" #Determine where the output files will be stored
 BCFTOOLS_BINARY="/home/release/other_tools/bcftools-1.7/bcftools" #bcftools >=1.7 is recommended
-MIN_QUAL=50
+MIN_QUAL=10
 
 
 
 
 
-# You do not need to modify any of the lines below unless you want to tweak the pipeline
+
 
 # ************************************************************************************************************************************************************************
 
@@ -138,7 +138,7 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam 
     --algo CoverageMetrics tumor_coverage_metrics
 
 # ******************************************
-# 4a. Base recalibration for tumor sample
+# 4a. Base recalibration for tumor sample (Skip if Panel or targeted sequencing)
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
     --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS tumor_recal_data.table
@@ -149,7 +149,7 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
     --before tumor_recal_data.table --after tumor_recal_data.table.post tumor_recal.csv
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o tumor_recal_plots.pdf tumor_recal.csv
 # ******************************************
-# 4b. Base recalibration for normal sample
+# 4b. Base recalibration for normal sample (Skip if Panel or targeted sequencing)
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i normal_deduped.bam \
     --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS normal_recal_data.table
@@ -164,12 +164,13 @@ $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o normal_recal_plots.pdf normal
 # 5. Somatic and Structural variant calling
 # ******************************************
 # Consider adding `--disable_detector sv --trim_soft_clip` if not interested in SV calling
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    -i normal_deduped.bam \
-    ${INTERVAL_FILE:+--interval_padding 250 --interval $INTERVAL_FILE} \
-    -q tumor_recal_data.table -q normal_recal_data.table --algo TNscope \
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT ${INTERVAL_FILE:+--interval_padding 250 --interval $INTERVAL_FILE} \
+    -i tumor_deduped.bam -i normal_deduped.bam \
+    -q tumor_recal_data.table -q normal_recal_data.table \
+    --algo TNscope \
     --tumor_sample $TUMOR_SM --normal_sample $NORMAL_SM --dbsnp $KNOWN_DBSNP \
     --sv_mask_ext 10 --max_fisher_pv_active 0.05 --min_tumor_allele_frac 0.005 \
+    --filter_t_alt_frac 0.005 --resample_depth 100000 --clip_by_minbq 1 \
     --assemble_mode 4 output_tnscope.pre_filter.vcf.gz
 
 # ******************************************
@@ -177,11 +178,8 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam 
 # ******************************************
 $BCFTOOLS_BINARY annotate ${INTERVAL_FILE:+-R $INTERVAL_FILE} -x "FILTER/triallelic_site" output_tnscope.pre_filter.vcf.gz | \
     $BCFTOOLS_BINARY filter -m + -s "insignificant" -e "(PV>0.25 && PV2>0.25) || (INFO/STR == 1 && PV>0.05)" | \
-        $BCFTOOLS_BINARY filter -m + -s "orientation_bias" -e "FMT/FOXOG[0] == 1" | \
-        $BCFTOOLS_BINARY filter -m + -s "strand_bias" -e "SOR > 3" | \
         $BCFTOOLS_BINARY filter -m + -s "low_qual" -e "QUAL < $MIN_QUAL" | \
         $BCFTOOLS_BINARY filter -m + -s "short_tandem_repeat" -e "RPA[0]>=10" | \
-        $BCFTOOLS_BINARY filter -m + -s "noisy_region" -e "ECNT>5" | \
-        $BCFTOOLS_BINARY filter -m + -s "read_pos_bias" -e "FMT/ReadPosRankSumPS[0] < -8" | \
+        $BCFTOOLS_BINARY filter -m + -s "read_pos_bias" -e "FMT/ReadPosRankSumPS[0] < -5" | \
 	$SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert - output_tnscope.filtered.vcf.gz
 
