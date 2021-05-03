@@ -12,6 +12,7 @@
 SM="sample" #sample name
 RGID="rg_$SM" #read group ID
 PL="ILLUMINA" #or other sequencing platform
+READ_LENGTH=101 #the read length for the sample
 FASTQ_FOLDER="/home/pipeline/samples"
 FASTQ_1="$FASTQ_FOLDER/rna1.fastq.gz"
 FASTQ_2="$FASTQ_FOLDER/rna2.fastq.gz" #If using Illumina paired data
@@ -34,7 +35,6 @@ export SENTIEON_LICENSE=/home/Licenses/Sentieon.lic #or using licsrvr: c1n11.sen
 # Other settings
 NT=$(nproc) #number of threads to use in computation, set to number of cores in the server
 START_DIR="$PWD/test/RNAseq" #Determine where the output files will be stored
-STAR_BINARY="/home/release/other_tools/STAR/bin/Linux_x86_64_static/STAR"
 
 
 
@@ -61,15 +61,17 @@ if [ -z "$STAR_FASTA" ]; then
   STAR_FASTA="genomeDir"
   # The genomeDir generation could be reused
   mkdir $STAR_FASTA
-  $STAR_BINARY --runMode genomeGenerate --genomeDir $STAR_FASTA --genomeFastaFiles $FASTA \
-      --runThreadN $NT
+  $SENTIEON_INSTALL_DIR/bin/sentieon STAR --runMode genomeGenerate \
+      --genomeDir $STAR_FASTA --genomeFastaFiles $FASTA --runThreadN $NT
 fi
 #perform the actual alignment and sorting
-$STAR_BINARY --twopassMode Basic --genomeDir $STAR_FASTA --runThreadN $NT --outSAMtype BAM \
-    SortedByCoordinate --twopass1readsN -1 --sjdbOverhang 75 --readFilesIn $FASTQ_1 $FASTQ_2 \
-    --readFilesCommand zcat --outSAMattrRGline ID:$RGID SM:$SM PL:$PL
-mv Aligned.sortedByCoord.out.bam sorted.bam
-$SENTIEON_INSTALL_DIR/bin/sentieon util index sorted.bam
+$SENTIEON_INSTALL_DIR/bin/sentieon STAR --twopassMode Basic --genomeDir $STAR_FASTA \
+    --runThreadN $NT --outStd BAM_Unsorted --outSAMtype BAM Unsorted \
+    --outBAMcompression 0 --twopass1readsN -1 --sjdbOverhang `expr "$READ_LENGTH" - 1` \
+    --readFilesIn $FASTQ_1 $FASTQ_2 --readFilesCommand "zcat" \
+    --outSAMattrRGline ID:$RGID SM:$SM PL:$PL | \
+    $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam \
+    -t $NT --bam_compression 1 -i -
 
 # ******************************************
 # 2. Metrics
