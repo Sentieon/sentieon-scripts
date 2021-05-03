@@ -60,7 +60,7 @@ DRIVER_INTERVAL_OPTION="${INTERVAL_FILE:+--interval $INTERVAL_FILE}"
 if [ -z "$STAR_FASTA" ]; then
   STAR_FASTA="genomeDir"
   # The genomeDir generation could be reused
-  mkdir $star_fasta
+  mkdir $STAR_FASTA
   $STAR_BINARY --runMode genomeGenerate --genomeDir $STAR_FASTA --genomeFastaFiles $FASTA \
       --runThreadN $NT
 fi
