@@ -56,6 +56,7 @@ cd $WORKDIR
     -t $NT -K 10000000 $FASTA $FASTQ_1 $FASTQ_2 || echo -n 'error' ) | \
     $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam -t $NT \
     --sam2bam -i -
+if [ "$?" -ne "0" ]; then   echo "Alignment failed";   exit 1; fi
 
 # ******************************************
 # 2. Metrics
@@ -64,6 +65,8 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i sorted.bam \
     --algo MeanQualityByCycle mq_metrics.txt --algo QualDistribution qd_metrics.txt \
     --algo GCBias --summary gc_summary.txt gc_metrics.txt --algo AlignmentStat \
     --adapter_seq '' aln_metrics.txt --algo InsertSizeMetricAlgo is_metrics.txt
+if [ "$?" -ne "0" ]; then   echo "Metrics failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon plot GCBias -o gc-report.pdf gc_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualDistribution -o qd-report.pdf qd_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot MeanQualityByCycle -o mq-report.pdf mq_metrics.txt
@@ -76,18 +79,27 @@ $SENTIEON_INSTALL_DIR/bin/sentieon plot InsertSizeMetricAlgo -o is-report.pdf is
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo LocusCollector \
     --fun score_info score.txt
+if [ "$?" -ne "0" ]; then   echo "LocusCollector failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup \
     --score_info score.txt --metrics dedup_metrics.txt deduped.bam
+if [ "$?" -ne "0" ]; then   echo "Dedup failed";   exit 1; fi
 
 # ******************************************
 # 5. Base recalibration
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam --algo QualCal \
     -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS recal_data.table
+if [ "$?" -ne "0" ]; then   echo "QualCal1 failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table \
     --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS recal_data.table.post
+if [ "$?" -ne "0" ]; then   echo "QualCal2 failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
     --before recal_data.table --after recal_data.table.post recal.csv
+if [ "$?" -ne "0" ]; then   echo "QualCal3 failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o recal_plots.pdf recal.csv
 
 # ******************************************
@@ -95,6 +107,7 @@ $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o recal_plots.pdf recal.csv
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table \
     --algo Haplotyper -d $KNOWN_DBSNP output-hc.vcf.gz
+if [ "$?" -ne "0" ]; then   echo "Haplotyper failed";   exit 1; fi
 
 # ******************************************
 # 5b. ReadWriter to output recalibrated bam
@@ -105,3 +118,4 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q rec
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table \
     --algo ReadWriter recaled.bam
+if [ "$?" -ne "0" ]; then   echo "ReadWriter failed";   exit 1; fi

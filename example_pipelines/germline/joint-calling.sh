@@ -61,6 +61,7 @@ for SM in $SM_LIST; do
       -t $NT -K 10000000 $FASTA $FASTQ_FOLDER/${SM}_$FASTQ_1_SUFFIX \
       $FASTQ_FOLDER/${SM}_$FASTQ_2_SUFFIX || echo -n 'error' ) | \
       $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam -t $NT --sam2bam -i -
+  if [ "$?" -ne "0" ]; then   echo "Alignment failed";   exit 1; fi
   
   # ******************************************
   # 2. Metrics
@@ -69,6 +70,8 @@ for SM in $SM_LIST; do
       --algo MeanQualityByCycle mq_metrics.txt --algo QualDistribution qd_metrics.txt \
       --algo GCBias --summary gc_summary.txt gc_metrics.txt --algo AlignmentStat \
       --adapter_seq '' aln_metrics.txt --algo InsertSizeMetricAlgo is_metrics.txt
+  if [ "$?" -ne "0" ]; then   echo "Metrics failed";   exit 1; fi
+
   $SENTIEON_INSTALL_DIR/bin/sentieon plot GCBias -o gc-report.pdf gc_metrics.txt
   $SENTIEON_INSTALL_DIR/bin/sentieon plot QualDistribution -o qd-report.pdf qd_metrics.txt
   $SENTIEON_INSTALL_DIR/bin/sentieon plot MeanQualityByCycle -o mq-report.pdf mq_metrics.txt
@@ -81,25 +84,36 @@ for SM in $SM_LIST; do
   # ******************************************
   $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo LocusCollector \
       --fun score_info score.txt
+  if [ "$?" -ne "0" ]; then   echo "LocusCollector failed";   exit 1; fi
+
   $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup \
       --score_info score.txt --metrics dedup_metrics.txt deduped.bam
+  if [ "$?" -ne "0" ]; then   echo "Dedup failed";   exit 1; fi
   
   # ******************************************
   # 2a. Coverage metrics
   # ******************************************
   $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam \
       --algo CoverageMetrics coverage_metrics
+  if [ "$?" -ne "0" ]; then   echo "CoverageMetrics failed";   exit 1; fi
 
   # ******************************************
   # 5. Base recalibration
   # ******************************************
   $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam --algo QualCal \
       -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS recal_data.table
+  if [ "$?" -ne "0" ]; then   echo "QualCal1 failed";   exit 1; fi
+
   $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table \
       --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS recal_data.table.post
+  if [ "$?" -ne "0" ]; then   echo "QualCal2 failed";   exit 1; fi
+
   $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
       --before recal_data.table --after recal_data.table.post recal.csv
+  if [ "$?" -ne "0" ]; then   echo "QualCal3 failed";   exit 1; fi
+
   $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o recal_plots.pdf recal.csv
+  if [ "$?" -ne "0" ]; then   echo "QualCal4 failed";   exit 1; fi
   
   # ******************************************
   # 6b. HC Variant caller for GVCF
@@ -107,6 +121,8 @@ for SM in $SM_LIST; do
   $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam -q recal_data.table \
       --algo Haplotyper -d $KNOWN_DBSNP --emit_conf=30 --call_conf=30 --emit_mode gvcf \
       output-hc.g.vcf.gz
+  if [ "$?" -ne "0" ]; then   echo "Haplotyper failed";   exit 1; fi
+
   GVCF_INPUTS="$GVCF_INPUTS -v $WORKDIR/$SM/output-hc.g.vcf.gz"
 done
 
@@ -115,3 +131,4 @@ done
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA --algo GVCFtyper $GVCF_INPUTS \
     -d $KNOWN_DBSNP $WORKDIR/output-jc.vcf.gz
+if [ "$?" -ne "0" ]; then   echo "GVCFtyper failed";   exit 1; fi

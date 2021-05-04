@@ -56,11 +56,14 @@ fi
   -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT \
   -K 10000000 $FASTA - || echo -n 'error' ) | \
   $SENTIEON_INSTALL_DIR/bin/sentieon umi consensus -o umi_consensus.fastq.gz
+if [ "$?" -ne "0" ]; then   echo "Alignment/Consensus failed";   exit 1; fi
+
 ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C -M \
     -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT -K 10000000 \
     $FASTA umi_consensus.fastq.gz || echo -n 'error' ) | \
     $SENTIEON_INSTALL_DIR/bin/sentieon util sort --umi_post_process --sam2bam -i - \
     -o umi_consensus.bam
+if [ "$?" -ne "0" ]; then   echo "Consensus alignment failed";   exit 1; fi
 
 # ******************************************
 # 2. Somatic and Structural variant calling
@@ -82,12 +85,15 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i umi_consensus.bam 
     --resample_depth 100000 \
     --assemble_mode 4 \
     output_tnscope.pre_filter.vcf.gz
+if [ "$?" -ne "0" ]; then   echo "TNscope failed";   exit 1; fi
+
 #### The output of TNscope requires filtering to remove false positives.
 #### Filter design depends on the specific sample and user needs to modify the following accordingly.
-$BCFTOOLS_BINARY annotate ${INTERVAL_FILE:+-R $INTERVAL_FILE} -x "FILTER/triallelic_site" output_tnscope.pre_filter.vcf.gz | \
-    $BCFTOOLS_BINARY filter -m + -s "low_qual" -e "QUAL < 10" | \
-    $BCFTOOLS_BINARY filter -m + -s "short_tandem_repeat" -e "RPA[0]>=10" | \
-    $BCFTOOLS_BINARY filter -m + -s "read_pos_bias" -e "FMT/ReadPosRankSumPS[0] < -5" | \
-    $BCFTOOLS_BINARY filter -m + -s "base_qual_bias" -e "FMT/BaseQRankSumPS[0] < -5" | \
-    $BCFTOOLS_BINARY filter -m + -s "low_depth" -e "SUM(FMT/AD[0:]) < $MIN_DEPTH" | \
+( $BCFTOOLS_BINARY annotate ${INTERVAL_FILE:+-R $INTERVAL_FILE} -x "FILTER/triallelic_site" output_tnscope.pre_filter.vcf.gz || echo "VCF filtering failed"; exit 1 ) | \
+    ( $BCFTOOLS_BINARY filter -m + -s "low_qual" -e "QUAL < 10" || echo "VCF filtering failed"; exit 1 ) | \
+    ( $BCFTOOLS_BINARY filter -m + -s "short_tandem_repeat" -e "RPA[0]>=10" || echo "VCF filtering failed"; exit 1 ) | \
+    ( $BCFTOOLS_BINARY filter -m + -s "read_pos_bias" -e "FMT/ReadPosRankSumPS[0] < -5" || echo "VCF filtering failed"; exit 1 ) | \
+    ( $BCFTOOLS_BINARY filter -m + -s "base_qual_bias" -e "FMT/BaseQRankSumPS[0] < -5" || echo "VCF filtering failed"; exit 1 ) | \
+    ( $BCFTOOLS_BINARY filter -m + -s "low_depth" -e "SUM(FMT/AD[0:]) < $MIN_DEPTH" || echo "VCF filtering failed"; exit 1 ) | \
     $SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert - output_tnscope.filtered.vcf.gz
+if [ "$?" -ne "0" ]; then   echo "VCF filtering failed";   exit 1; fi

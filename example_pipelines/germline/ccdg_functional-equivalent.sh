@@ -53,26 +53,32 @@ cd $WORKDIR
 # ******************************************
 SENTIEON_VERSION=$($SENTIEON_INSTALL_DIR/bin/sentieon driver --version)
 if (( $(echo "${SENTIEON_VERSION##*-} < 201911" |bc -l) )); then
-        $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" -t $NT \
-           -K 100000000 -Y $FASTA $FASTQ_1 $FASTQ_2 | \
-        $SAMBLASTER --addMateTags -a | \
+        ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" -t $NT \
+            -K 100000000 -Y $FASTA $FASTQ_1 $FASTQ_2 || echo -n 'error' ) | \
+            ( $SAMBLASTER --addMateTags -a || echo -n 'error' ) | \
         $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam -t $NT --sam2bam -i -
 else
         #Sentieon 201911 and higher use BWA 0.7.17, which already produce MC tags in the output
-        $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" -t $NT \
-           -K 100000000 -Y $FASTA $FASTQ_1 $FASTQ_2 | \
+        ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" -t $NT \
+            -K 100000000 -Y $FASTA $FASTQ_1 $FASTQ_2 || echo -n 'error' ) | \
         $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam -t $NT --sam2bam -i -
 fi
+if [ "$?" -ne "0" ]; then   echo "Alignment failed";   exit 1; fi
 
 # ******************************************
 # 2. Mark Duplicates with Sentieon
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo LocusCollector \
     --fun score_info score.txt
+if [ "$?" -ne "0" ]; then   echo "LocusCollector failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup --score_info score.txt \
    --metrics mark_dup_metrics.txt --output_dup_read_name tmp_dup_qname.txt
+if [ "$?" -ne "0" ]; then   echo "Dedup1 failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup \
    --dup_read_name tmp_dup_qname.txt markduped.bam
+if [ "$?" -ne "0" ]; then   echo "Dedup2 failed";   exit 1; fi
 
 # ******************************************
 # 3. Base Quality Score Recalibration with Sentieon
@@ -81,12 +87,16 @@ interval_arg="--interval chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr1
 chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22"
 $SENTIEON_INSTALL_DIR/bin/sentieon driver $interval_arg -r $FASTA -t $NT -i markduped.bam \
    --algo QualCal -k $KNOWN_MILLS -k $KNOWN_INDELS -k $KNOWN_DBSNP recal_data.table
+if [ "$?" -ne "0" ]; then   echo "QualCal failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i markduped.bam \
    --read_filter QualCalFilter,table=recal_data.table,prior=-1.0,indel=false,levels=10/20/30,min_qual=6 \
    --algo ReadWriter recaled_RW.cram
+if [ "$?" -ne "0" ]; then   echo "ReadWriter failed";   exit 1; fi
 
 # ******************************************
 # 4. Haplotyper with Sentieon
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i recaled_RW.cram --algo Haplotyper \
     Haplotyper.vcf.gz
+if [ "$?" -ne "0" ]; then   echo "Haplotyper failed";   exit 1; fi

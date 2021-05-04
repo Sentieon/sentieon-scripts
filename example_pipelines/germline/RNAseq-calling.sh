@@ -63,15 +63,17 @@ if [ -z "$STAR_FASTA" ]; then
   mkdir $STAR_FASTA
   $SENTIEON_INSTALL_DIR/bin/sentieon STAR --runMode genomeGenerate \
       --genomeDir $STAR_FASTA --genomeFastaFiles $FASTA --runThreadN $NT
+  if [ "$?" -ne "0" ]; then   echo "STAR index failed";   exit 1; fi
 fi
 #perform the actual alignment and sorting
-$SENTIEON_INSTALL_DIR/bin/sentieon STAR --twopassMode Basic --genomeDir $STAR_FASTA \
+( $SENTIEON_INSTALL_DIR/bin/sentieon STAR --twopassMode Basic --genomeDir $STAR_FASTA \
     --runThreadN $NT --outStd BAM_Unsorted --outSAMtype BAM Unsorted \
     --outBAMcompression 0 --twopass1readsN -1 --sjdbOverhang `expr "$READ_LENGTH" - 1` \
     --readFilesIn $FASTQ_1 $FASTQ_2 --readFilesCommand "zcat" \
-    --outSAMattrRGline ID:$RGID SM:$SM PL:$PL | \
+    --outSAMattrRGline ID:$RGID SM:$SM PL:$PL || echo -n 'error' ) | \
     $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam \
     -t $NT --bam_compression 1 -i -
+if [ "$?" -ne "0" ]; then   echo "STAR alignment failed";   exit 1; fi
 
 # ******************************************
 # 2. Metrics
@@ -81,6 +83,8 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $
     qd_metrics.txt --algo GCBias --summary gc_summary.txt gc_metrics.txt \
     --algo AlignmentStat --adapter_seq '' aln_metrics.txt --algo InsertSizeMetricAlgo \
     is_metrics.txt
+if [ "$?" -ne "0" ]; then   echo "Metrics failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon plot GCBias -o gc-report.pdf gc_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualDistribution -o qd-report.pdf qd_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot MeanQualityByCycle -o mq-report.pdf mq_metrics.txt
@@ -93,20 +97,25 @@ $SENTIEON_INSTALL_DIR/bin/sentieon plot InsertSizeMetricAlgo -o is-report.pdf is
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo LocusCollector \
     --fun score_info score.txt
+if [ "$?" -ne "0" ]; then   echo "LocusCollector failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i sorted.bam --algo Dedup \
     --score_info score.txt --metrics dedup_metrics.txt deduped.bam
+if [ "$?" -ne "0" ]; then   echo "Dedup failed";   exit 1; fi
 
 # ******************************************
 # 2a. Coverage metrics
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam \
     --algo CoverageMetrics coverage_metrics
+if [ "$?" -ne "0" ]; then   echo "CoverageMetrics failed";   exit 1; fi
 
 # ******************************************
 # 4. Split reads at Junction
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam \
     --algo RNASplitReadsAtJunction --reassign_mapq 255:60 splitted.bam
+if [ "$?" -ne "0" ]; then   echo "RNASplitReadsAtJunction failed";   exit 1; fi
 
 # ******************************************
 # 6. Base recalibration
@@ -114,11 +123,17 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam \
 $SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT \
     -i splitted.bam --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS \
     recal_data.table
+if [ "$?" -ne "0" ]; then   echo "QualCal1 failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT \
     -i splitted.bam -q recal_data.table --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS \
     -k $KNOWN_INDELS recal_data.table.post
+if [ "$?" -ne "0" ]; then   echo "QualCal2 failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
     --before recal_data.table --after recal_data.table.post recal.csv
+if [ "$?" -ne "0" ]; then   echo "QualCal3 failed";   exit 1; fi
+
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o recal_plots.pdf recal.csv
 
 # ******************************************
@@ -127,3 +142,4 @@ $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o recal_plots.pdf recal.csv
 $SENTIEON_INSTALL_DIR/bin/sentieon driver $DRIVER_INTERVAL_OPTION -r $FASTA -t $NT \
     -i splitted.bam -q recal_data.table --algo Haplotyper -d $KNOWN_DBSNP \
     --trim_soft_clip --emit_conf=20 --call_conf=20 output-hc-rna.vcf.gz
+if [ "$?" -ne "0" ]; then   echo "Haplotyper failed";   exit 1; fi
