@@ -9,6 +9,8 @@
 # and data from a Panel of Normals and Cosmic DB
 # *******************************************
 
+set -eu
+
 # Update with the fullpath location of your sample fastq
 TUMOR_SM="tumor_sample" #sample name
 TUMOR_RGID="rg_$TUMOR_SM" #read group ID
@@ -59,9 +61,10 @@ cd $WORKDIR
 # ******************************************
 #The results of this call are dependent on the number of threads used. To have number of threads independent results, add chunk size option -K 10000000 
 ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -M -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" \
-    -t $NT -K 10000000 $FASTA $TUMOR_FASTQ_1 $TUMOR_FASTQ_2 || echo -n 'error' ) | \
-    $SENTIEON_INSTALL_DIR/bin/sentieon util sort -o tumor_sorted.bam -t $NT --sam2bam -i -
-if [ "$?" -ne "0" ]; then   echo "Alignment failed";   exit 1; fi
+    -t $NT -K 10000000 $FASTA $TUMOR_FASTQ_1 $TUMOR_FASTQ_2 || \
+    { echo -n 'BWA error'; exit 1; } ) | \
+    $SENTIEON_INSTALL_DIR/bin/sentieon util sort -o tumor_sorted.bam -t $NT --sam2bam -i - || \
+    { echo "Alignment failed"; exit 1; }
 
 # ******************************************
 # 2a. Metrics for tumor sample
@@ -70,8 +73,8 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_sorted.bam \
     --algo MeanQualityByCycle tumor_mq_metrics.txt \
     --algo QualDistribution tumor_qd_metrics.txt --algo GCBias \
     --summary tumor_gc_summary.txt tumor_gc_metrics.txt --algo AlignmentStat \
-    --adapter_seq '' tumor_aln_metrics.txt --algo InsertSizeMetricAlgo tumor_is_metrics.txt
-if [ "$?" -ne "0" ]; then   echo "Metrics failed";   exit 1; fi
+    --adapter_seq '' tumor_aln_metrics.txt --algo InsertSizeMetricAlgo tumor_is_metrics.txt || \
+    { echo "Metrics failed"; exit 1; }
 
 $SENTIEON_INSTALL_DIR/bin/sentieon plot GCBias -o tumor_gc-report.pdf tumor_gc_metrics.txt
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualDistribution \
@@ -89,43 +92,35 @@ $SENTIEON_INSTALL_DIR/bin/sentieon plot InsertSizeMetricAlgo \
 # by ommiting the --rmdup option in Dedup
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam --algo LocusCollector \
-    --fun score_info tumor_score.txt
-if [ "$?" -ne "0" ]; then   echo "LocusCollector failed";   exit 1; fi
+    --fun score_info tumor_score.txt || { echo "LocusCollector failed"; exit 1; }
 
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam --algo Dedup \
-    --rmdup --score_info tumor_score.txt --metrics tumor_dedup_metrics.txt tumor_deduped.bam
-if [ "$?" -ne "0" ]; then   echo "Dedup failed";   exit 1; fi
+    --rmdup --score_info tumor_score.txt --metrics tumor_dedup_metrics.txt tumor_deduped.bam || \
+    { echo "Dedup failed"; exit 1; }
 
 # ******************************************
 # 2a. Coverage metrics for tumor sample
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    --algo CoverageMetrics tumor_coverage_metrics
-if [ "$?" -ne "0" ]; then   echo "CoverageMetrics failed";   exit 1; fi
+    --algo CoverageMetrics tumor_coverage_metrics || { echo "CoverageMetrics failed"; exit 1; }
 
 # ******************************************
 # 4a. Indel realigner for tumor sample
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    --algo Realigner -k $KNOWN_MILLS -k $KNOWN_INDELS tumor_realigned.bam
-if [ "$?" -ne "0" ]; then   echo "Realigner failed";   exit 1; fi
+    --algo Realigner -k $KNOWN_MILLS -k $KNOWN_INDELS tumor_realigned.bam || \
+    { echo "Realigner failed"; exit 1; }
 
 # ******************************************
 # 5a. Base recalibration for tumor sample
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_realigned.bam \
     --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS tumor_recal_data.table
-if [ "$?" -ne "0" ]; then   echo "QualCal1 failed";   exit 1; fi
-
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_realigned.bam \
     -q tumor_recal_data.table --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS \
     -k $KNOWN_INDELS tumor_recal_data.table.post
-if [ "$?" -ne "0" ]; then   echo "QualCal2 failed";   exit 1; fi
-
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
     --before tumor_recal_data.table --after tumor_recal_data.table.post tumor_recal.csv
-if [ "$?" -ne "0" ]; then   echo "QualCal3 failed";   exit 1; fi
-
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o tumor_recal_plots.pdf tumor_recal.csv
 
 # ******************************************
@@ -133,12 +128,13 @@ $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o tumor_recal_plots.pdf tumor_r
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_realigned.bam \
     -q tumor_recal_data.table --algo TNsnv --tumor_sample $TUMOR_SM \
-    --pon $PANEL_OF_NORMAL_TNSNV --cosmic $COSMIC_DB --dbsnp $KNOWN_DBSNP \
-    --call_stats_out output-call.stats output-tnsnv.vcf.gz
-if [ "$?" -ne "0" ]; then   echo "TNsnv failed";   exit 1; fi
+    ${PANEL_OF_NORMAL_TNSNV:+--pon $PANEL_OF_NORMAL_TNSNV} \
+    --cosmic $COSMIC_DB --dbsnp $KNOWN_DBSNP \
+    --call_stats_out output-call.stats output-tnsnv.vcf.gz || \
+    { echo "TNsnv failed"; exit 1; }
 
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_realigned.bam \
     -q tumor_recal_data.table --algo TNhaplotyper --tumor_sample $TUMOR_SM \
-    --pon $PANEL_OF_NORMAL_TNHAPLOTYPER --cosmic $COSMIC_DB --dbsnp $KNOWN_DBSNP \
-    output-tnhaplotyper.vcf.gz
-if [ "$?" -ne "0" ]; then   echo "TNhaplotyper failed";   exit 1; fi
+    ${PANEL_OF_NORMAL_TNHAPLOTYPER:+--pon $PANEL_OF_NORMAL_TNHAPLOTYPER} \
+    --cosmic $COSMIC_DB --dbsnp $KNOWN_DBSNP \
+    output-tnhaplotyper.vcf.gz || { echo "TNhaplotyper failed"; exit 1; }

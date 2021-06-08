@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Copyright (c) 2016-2020 Sentieon Inc. All rights reserved
 
@@ -6,6 +6,8 @@
 # Script to perform TNscope variant calling on
 # UMI-tagged samples
 # *******************************************
+
+set -eu
 
 # Update with the fullpath location of your sample fastq
 TUMOR_SM="tumor_sample" #sample name
@@ -51,19 +53,18 @@ if [ "$DUPLEX_UMI" = "true" ] ; then
     READ_STRUCTURE="-d $READ_STRUCTURE"
 fi
 ( $SENTIEON_INSTALL_DIR/bin/sentieon umi extract $READ_STRUCTURE $TUMOR_FASTQ_1 $TUMOR_FASTQ_2 || \
-    ( echo -n 'error' >&2; exit -1 ) ) | \
+    { echo -n 'Extract error' >&2; exit -1; } ) | \
   ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C -M \
   -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT \
-  -K 10000000 $FASTA - || echo -n 'error' ) | \
-  $SENTIEON_INSTALL_DIR/bin/sentieon umi consensus -o umi_consensus.fastq.gz
-if [ "$?" -ne "0" ]; then   echo "Alignment/Consensus failed";   exit 1; fi
+  -K 10000000 $FASTA - || { echo -n 'BWA error'; exit 1; } ) | \
+  $SENTIEON_INSTALL_DIR/bin/sentieon umi consensus -o umi_consensus.fastq.gz || \
+  { echo "Alignment/Consensus failed"; exit 1; }
 
 ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C -M \
     -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT -K 10000000 \
-    $FASTA umi_consensus.fastq.gz || echo -n 'error' ) | \
+    $FASTA umi_consensus.fastq.gz || { echo -n 'BWA error'; exit 1; } ) | \
     $SENTIEON_INSTALL_DIR/bin/sentieon util sort --umi_post_process --sam2bam -i - \
-    -o umi_consensus.bam
-if [ "$?" -ne "0" ]; then   echo "Consensus alignment failed";   exit 1; fi
+    -o umi_consensus.bam || { echo "Consensus alignment failed"; exit 1; }
 
 # ******************************************
 # 2. Somatic and Structural variant calling
@@ -84,16 +85,22 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i umi_consensus.bam 
     --min_base_qual_asm 40 \
     --resample_depth 100000 \
     --assemble_mode 4 \
-    output_tnscope.pre_filter.vcf.gz
-if [ "$?" -ne "0" ]; then   echo "TNscope failed";   exit 1; fi
+    output_tnscope.pre_filter.vcf.gz || \
+    { echo "TNscope failed"; exit 1; }
 
 #### The output of TNscope requires filtering to remove false positives.
 #### Filter design depends on the specific sample and user needs to modify the following accordingly.
-( $BCFTOOLS_BINARY annotate ${INTERVAL_FILE:+-R $INTERVAL_FILE} -x "FILTER/triallelic_site" output_tnscope.pre_filter.vcf.gz || echo "VCF filtering failed"; exit 1 ) | \
-    ( $BCFTOOLS_BINARY filter -m + -s "low_qual" -e "QUAL < 10" || echo "VCF filtering failed"; exit 1 ) | \
-    ( $BCFTOOLS_BINARY filter -m + -s "short_tandem_repeat" -e "RPA[0]>=10" || echo "VCF filtering failed"; exit 1 ) | \
-    ( $BCFTOOLS_BINARY filter -m + -s "read_pos_bias" -e "FMT/ReadPosRankSumPS[0] < -5" || echo "VCF filtering failed"; exit 1 ) | \
-    ( $BCFTOOLS_BINARY filter -m + -s "base_qual_bias" -e "FMT/BaseQRankSumPS[0] < -5" || echo "VCF filtering failed"; exit 1 ) | \
-    ( $BCFTOOLS_BINARY filter -m + -s "low_depth" -e "SUM(FMT/AD[0:]) < $MIN_DEPTH" || echo "VCF filtering failed"; exit 1 ) | \
-    $SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert - output_tnscope.filtered.vcf.gz
-if [ "$?" -ne "0" ]; then   echo "VCF filtering failed";   exit 1; fi
+( $BCFTOOLS_BINARY annotate ${INTERVAL_FILE:+-R $INTERVAL_FILE} -x "FILTER/triallelic_site" output_tnscope.pre_filter.vcf.gz || \
+        { echo "VCF filtering failed"; exit 1; } ) | \
+    ( $BCFTOOLS_BINARY filter -m + -s "low_qual" -e "QUAL < 10" || \
+        { echo "VCF filtering failed"; exit 1; } ) | \
+    ( $BCFTOOLS_BINARY filter -m + -s "short_tandem_repeat" -e "RPA[0]>=10" || \
+        { echo "VCF filtering failed"; exit 1; } ) | \
+    ( $BCFTOOLS_BINARY filter -m + -s "read_pos_bias" -e "FMT/ReadPosRankSumPS[0] < -5" || \
+        { echo "VCF filtering failed"; exit 1; } ) | \
+    ( $BCFTOOLS_BINARY filter -m + -s "base_qual_bias" -e "FMT/BaseQRankSumPS[0] < -5" || \
+        { echo "VCF filtering failed"; exit 1; } ) | \
+    ( $BCFTOOLS_BINARY filter -m + -s "low_depth" -e "SUM(FMT/AD[0:]) < $MIN_DEPTH" || \
+        { echo "VCF filtering failed"; exit 1; } ) | \
+    $SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert - output_tnscope.filtered.vcf.gz || \
+        { echo "VCF filtering failed"; exit 1; }
