@@ -186,6 +186,7 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT \
     -i tumor_deduped.bam -i normal_deduped.bam \
     -q tumor_recal_data.table -q normal_recal_data.table \
     --algo TNscope \
+    --prune_factor 0 \
     --tumor_sample $TUMOR_SM --normal_sample $NORMAL_SM --dbsnp $KNOWN_DBSNP \
     --sv_mask_ext 10 --max_fisher_pv_active 0.05 --min_tumor_allele_frac 0.005 \
     --filter_t_alt_frac 0.005 --resample_depth 100000 --clip_by_minbq 1 \
