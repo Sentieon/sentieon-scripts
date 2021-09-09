@@ -60,7 +60,7 @@ for SM in $SM_LIST; do
   # ******************************************
   # 1. Mapping reads with BWA-MEM, sorting
   # ******************************************
-  ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -M -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" \
+  ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" \
       -t $NT -K 10000000 $FASTA $FASTQ_FOLDER/${SM}_$FASTQ_1_SUFFIX \
       $FASTQ_FOLDER/${SM}_$FASTQ_2_SUFFIX || { echo -n 'bwa error'; exit 1; } ) | \
       $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam -t $NT --sam2bam -i - || \

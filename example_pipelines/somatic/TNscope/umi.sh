@@ -54,13 +54,13 @@ if [ "$DUPLEX_UMI" = "true" ] ; then
 fi
 ( $SENTIEON_INSTALL_DIR/bin/sentieon umi extract $READ_STRUCTURE $TUMOR_FASTQ_1 $TUMOR_FASTQ_2 || \
     { echo -n 'Extract error' >&2; exit -1; } ) | \
-  ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C -M \
+  ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C \
   -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT \
   -K 10000000 $FASTA - || { echo -n 'BWA error'; exit 1; } ) | \
   $SENTIEON_INSTALL_DIR/bin/sentieon umi consensus -o umi_consensus.fastq.gz || \
   { echo "Alignment/Consensus failed"; exit 1; }
 
-( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C -M \
+( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C \
     -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT -K 10000000 \
     $FASTA umi_consensus.fastq.gz || { echo -n 'BWA error'; exit 1; } ) | \
     $SENTIEON_INSTALL_DIR/bin/sentieon util sort --umi_post_process --sam2bam -i - \

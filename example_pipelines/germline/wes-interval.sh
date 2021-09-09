@@ -55,7 +55,7 @@ cd $WORKDIR
 # 1. Mapping reads with BWA-MEM, sorting
 # ******************************************
 #The results of this call are dependent on the number of threads used. To have number of threads independent results, add chunk size option -K 10000000 
-( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -M -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" \
+( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" \
     -t $NT -K 10000000 $FASTA $FASTQ_1 $FASTQ_2 || { echo -n 'BWA error'; exit 1; } ) | \
     $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam -t $NT \
     --sam2bam -i - || { echo "Alignment failed"; exit 1; }

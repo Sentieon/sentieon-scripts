@@ -61,7 +61,7 @@ cd $WORKDIR
 BAM_INPUT=""
 for i in $(seq 1 $NUM_SETS); do
  BAM_INPUT="$BAM_INPUT -i sorted_set$i.bam"
- ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -M \
+ ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem \
      -R "@RG\tID:${RGID_PREFIX}_$i\tSM:$SM\tPL:$PL" -t $NT -K 10000000 $FASTA \
      $FASTQ_FOLDER/$FASTQ_PREFIX$i$FASTQ_SUFFIX_1 \
      $FASTQ_FOLDER/$FASTQ_PREFIX$i$FASTQ_SUFFIX_2 || { echo -n 'bwa error'; exit 1; } ) | \

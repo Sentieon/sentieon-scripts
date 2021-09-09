@@ -61,7 +61,7 @@ cd $WORKDIR
 # 1a. Mapping reads with BWA-MEM, sorting for tumor sample
 # ******************************************
 #The results of this call are dependent on the number of threads used. To have number of threads independent results, add chunk size option -K 10000000 
-( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -M -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" \
+( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" \
     -t $NT -K 10000000 $FASTA $TUMOR_FASTQ_1 $TUMOR_FASTQ_2 || \
     { echo -n 'BWA error'; exit 1; } ) | \
     $SENTIEON_INSTALL_DIR/bin/sentieon util sort -o tumor_sorted.bam -t $NT --sam2bam -i - || \
@@ -71,7 +71,7 @@ cd $WORKDIR
 # 1b. Mapping reads with BWA-MEM, sorting for normal sample
 # ******************************************
 #The results of this call are dependent on the number of threads used. To have number of threads independent results, add chunk size option -K 10000000 
-( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -M -R "@RG\tID:$NORMAL_RGID\tSM:$NORMAL_SM\tPL:$PL" \
+( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -R "@RG\tID:$NORMAL_RGID\tSM:$NORMAL_SM\tPL:$PL" \
     -t $NT -K 10000000 $FASTA $NORMAL_FASTQ_1 $NORMAL_FASTQ_2 || \
     { echo -n 'BWA error'; exit 1; } ) | \
     $SENTIEON_INSTALL_DIR/bin/sentieon util sort -o normal_sorted.bam -t $NT --sam2bam -i - || \
