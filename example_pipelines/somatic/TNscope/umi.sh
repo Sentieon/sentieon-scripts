@@ -82,7 +82,6 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i umi_consensus.bam 
     --max_error_per_read 3 \
     --min_tumor_lod 3.0 \
     --min_base_qual 40 \
-    --min_base_qual_asm 40 \
     --resample_depth 100000 \
     --assemble_mode 4 \
     output_tnscope.pre_filter.vcf.gz || \
