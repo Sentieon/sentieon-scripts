@@ -26,10 +26,13 @@ KNOWN_DBSNP="$FASTA_DIR/dbsnp_138.b37.vcf.gz"
 KNOWN_INDELS="$FASTA_DIR/1000G_phase1.indels.b37.vcf.gz"
 KNOWN_MILLS="$FASTA_DIR/Mills_and_1000G_gold_standard.indels.b37.vcf.gz"
 # Update with the location of the panel of normal and CosmicDB vcf files
-PANEL_OF_NORMAL_TNSNV="/home/regression/references/b37/b37_panel_of_normal.TNsnv.vcf"
 # We recommend that you create the panel of normal file with the corresponding algorithm that you plan to use for the somatic mutation calling. 
-PANEL_OF_NORMAL_TNHAPLOTYPER="/home/regression/references/b37/b37_panel_of_normal.TNhaplotyper.vcf"
+PANEL_OF_NORMAL_TNSNV=
+PANEL_OF_NORMAL_TNHAPLOTYPER=
+PANEL_OF_NORMAL_TNHAPLOTYPER2=
 COSMIC_DB="/home/regression/references/b37/b37_cosmic_v54_120711.vcf.gz"
+CONTAMINATION_VCF="$FASTA_DIR/germline_vcf-af-only-gnomad.raw.sites.vcf"  # A VCF of germline sites to use for contamination detection
+GERMLINE_VCF=  # A VCF of known germline sites
 
 # Update with the location of the Sentieon software package and license file
 SENTIEON_INSTALL_DIR=/home/release/sentieon-genomics-|release_version|
@@ -105,18 +108,11 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam 
     --algo CoverageMetrics tumor_coverage_metrics || { echo "CoverageMetrics failed"; exit 1; }
 
 # ******************************************
-# 4a. Indel realigner for tumor sample
+# 4a. Base recalibration for tumor sample
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    --algo Realigner -k $KNOWN_MILLS -k $KNOWN_INDELS tumor_realigned.bam || \
-    { echo "Realigner failed"; exit 1; }
-
-# ******************************************
-# 5a. Base recalibration for tumor sample
-# ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_realigned.bam \
     --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS tumor_recal_data.table
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_realigned.bam \
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
     -q tumor_recal_data.table --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS \
     -k $KNOWN_INDELS tumor_recal_data.table.post
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
@@ -124,17 +120,51 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
 $SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o tumor_recal_plots.pdf tumor_recal.csv
 
 # ******************************************
-# 7. Somatic Variant Calling
+# 5a. Somatic Variant Calling - TNhaplotyper2
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_realigned.bam \
-    -q tumor_recal_data.table --algo TNsnv --tumor_sample $TUMOR_SM \
-    ${PANEL_OF_NORMAL_TNSNV:+--pon $PANEL_OF_NORMAL_TNSNV} \
-    --cosmic $COSMIC_DB --dbsnp $KNOWN_DBSNP \
-    --call_stats_out output-call.stats output-tnsnv.vcf.gz || \
-    { echo "TNsnv failed"; exit 1; }
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
+    -q tumor_recal_data.table --algo TNhaplotyper2 --tumor_sample $TUMOR_SM \
+    ${PANEL_OF_NORMAL_TNHAPLOTYPER2:+--pon $PANEL_OF_NORMAL_TNHAPLOTYPER2} \
+    ${GERMLINE_VCF:+--germline_vcf $GERMLINE_VCF} output-tnhap2-tmp.vcf.gz \
+    --algo OrientationBias --tumor_sample $TUMOR_SM output-orientation \
+    --algo ContaminationModel --tumor_sample $TUMOR_SM  --vcf $CONTAMINATION_VCF \
+    --tumor_segments output-contamination-segments output-contamination || \
+    { echo "TNhaplotyper2 failed"; exit 1; }
 
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_realigned.bam \
-    -q tumor_recal_data.table --algo TNhaplotyper --tumor_sample $TUMOR_SM \
-    ${PANEL_OF_NORMAL_TNHAPLOTYPER:+--pon $PANEL_OF_NORMAL_TNHAPLOTYPER} \
-    --cosmic $COSMIC_DB --dbsnp $KNOWN_DBSNP \
-    output-tnhaplotyper.vcf.gz || { echo "TNhaplotyper failed"; exit 1; }
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA --algo TNfilter \
+    -v output-tnhap2-tmp.vcf.gz --tumor_sample $TUMOR_SM \
+    --contamination output-contamination --tumor_segments output-contamination-segments \
+    --orientation_priors output-orientation output-tnhap2.vcf.gz || \
+    { echo "TNfilter failed"; exit 1; }
+
+
+# Uncomment the following commands to run somatic variant calling with TNhaplotyper
+# ******************************************
+# 5b. Somatic Variant Calling - TNhaplotyper
+# ******************************************
+#$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
+#    -q tumor_recal_data.table --algo TNhaplotyper --tumor_sample $TUMOR_SM \
+#    ${PANEL_OF_NORMAL_TNHAPLOTYPER:+--pon $PANEL_OF_NORMAL_TNHAPLOTYPER} \
+#    --cosmic $COSMIC_DB --dbsnp $KNOWN_DBSNP \
+#    output-tnhaplotyper.vcf.gz || { echo "TNhaplotyper failed"; exit 1; }
+
+
+# Uncomment the following commands to run indel realignment, and somatic variant
+# calling with TNsnv
+# ******************************************
+# 6. Indel realigner for tumor sample
+# ******************************************
+#$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
+#    --algo Realigner -k $KNOWN_MILLS -k $KNOWN_INDELS tumor_realigned.bam || \
+#    { echo "Realigner failed"; exit 1; }
+
+# ******************************************
+# 7. Somatic Variant Calling - TNsnv
+# ******************************************
+#$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_realigned.bam \
+#    -q tumor_recal_data.table --algo TNsnv --tumor_sample $TUMOR_SM \
+#    ${PANEL_OF_NORMAL_TNSNV:+--pon $PANEL_OF_NORMAL_TNSNV} \
+#    --cosmic $COSMIC_DB --dbsnp $KNOWN_DBSNP \
+#    --call_stats_out output-call.stats output-tnsnv.vcf.gz || \
+#    { echo "TNsnv failed"; exit 1; }
+
