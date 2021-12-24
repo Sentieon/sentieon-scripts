@@ -43,8 +43,7 @@ to pre-process it.
 
 ### Example Usage - Standard Processing ###
 ```
-export PYTHONPATH="$SENTIEON_INSTALL_DIR/lib/python/sentieon":"$PYTHONPATH"
-python merge_mnp.py input.vcf[.gz] ucsc.hg19.fasta > output.vcf
+$SENTIEON_INSTALL_DIR/bin/sentieon pyexec merge_mnp.py input.vcf[.gz] ucsc.hg19.fasta > output.vcf
 $SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert output.vcf output.vcf.gz
 ```
 
@@ -71,8 +70,7 @@ but we provide the following directions and awk script for convenience:
 
 #### Usage ####
 ```
-export PYTHONPATH="$SENTIEON_INSTALL_DIR/lib/python/sentieon":"$PYTHONPATH"
-python merge_mnp.py input.vcf[.gz] ucsc.hg19.fasta merge_by_codon codons.txt 1> output_noINDEL.vcf
+$SENTIEON_INSTALL_DIR/bin/sentieon pyexec merge_mnp.py input.vcf[.gz] ucsc.hg19.fasta merge_by_codon codons.txt 1> output_noINDEL.vcf
 $SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert output_noINDEL.vcf output_noINDEL.vcf.gz
 ```
 
@@ -85,7 +83,6 @@ an unphased VCF and the corresponding BAM file will add the phasing information.
 ```
 whatshap phase -o phased.vcf --reference=reference.fasta input.vcf input.bam
 $SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert phased.vcf phased.vcf.gz
-export PYTHONPATH="$SENTIEON_INSTALL_DIR/lib/python/sentieon":"$PYTHONPATH"
-python merge_mnp.py phased.vcf.gz reference.fasta > output.vcf
+$SENTIEON_INSTALL_DIR/bin/sentieon pyexec merge_mnp.py phased.vcf.gz reference.fasta > output.vcf
 $SENTIEON_INSTALL_DIR/bin/sentieon util vcfconvert output.vcf output.vcf.gz
 ```
