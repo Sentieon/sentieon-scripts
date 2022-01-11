@@ -7,9 +7,10 @@ strategies. Variants in the same haplotype are defined as those with common PID/
 [whatshap](https://whatshap.readthedocs.io/en/latest/guide.html)). Original variants that are
 combined will be marked as "MERGED".
 
-Requirements:
+Requirements:  
 This script requires access to the vcflib library contained in the Sentieon
-software package located in $SENTIEON_INSTALL_DIR/lib/python/sentieon.
+software package located in $SENTIEON_INSTALL_DIR/lib/python/sentieon. The script also
+uses [pyfaidx](https://github.com/mdshw5/pyfaidx).
 
 ### Usage ###
 ```
