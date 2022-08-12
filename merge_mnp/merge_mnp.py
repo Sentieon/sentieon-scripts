@@ -134,7 +134,9 @@ def merge(vs):
         for i in range(len(vcf.samples)):
             t = v.samples[i]
             vv_samples = [vs.samples[i] for vs in vv]
-            if type(vv_samples[0]["AF"]) == list:
+            if None in [vi.get("AF") for vi in vv_samples]:
+                pass
+            elif type(vv_samples[0]["AF"]) == list:
                 t["AF"] = [sum([vsi["AF"][j] for vsi in vv_samples])/len_vv for j in range(len(alt))]
             else:
                 t["AF"] = sum([vsi["AF"] for vsi in vv_samples])/len_vv
