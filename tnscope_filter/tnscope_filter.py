@@ -50,6 +50,7 @@ class TNscopeFilter(object):
         ('max_sor',                 float,  'Maximum Symmetric Odds Ratio'),
         ('max_ecnt',                int,    'Maximum number of events in this haplotype'),
         ('min_tumor_af',            float,  'Minimum tumor allele fraction'),
+        ('max_normal_af',           float,  'Maximum normal allele fraction'),
     )
 
     presets = {
@@ -83,13 +84,13 @@ class TNscopeFilter(object):
             'clear': 'triallelic_site',
             'max_pv': 0.1,
             'max_pv2': 0.1,
-            'max_str_pv': 0.05,
+            'max_str_pv': 0.0025,
             'max_foxog': 1,
             'max_sor': 3,
             'min_qual': 200,
             'max_str_length': 10,
-            'max_ecnt': 10,
             'min_read_pos_ranksum': -8,
+            'max_normal_af': 0.01,
         }
     }
 
@@ -106,11 +107,17 @@ class TNscopeFilter(object):
         return thr is not None and isinstance(val, list) and sum(val) < thr
     
     @Filter('low_allele_frac', 'Low allele fraction in tumor', 'min_tumor_af')
-    def low_depth(self, v):
+    def low_allele_frac(self, v):
         thr = self.args.min_tumor_af
         val = v.samples[self.t_smid].get('AF')
         return thr is not None and val is not None and val < thr
 
+    @Filter('alt_allele_in_normal', 'Evidence seen in the normal sample', 'max_normal_af')
+    def high_normal_af(self, v):
+        thr = self.args.max_normal_af
+        val = v.samples[self.n_smid].get('AF')
+        return thr is not None and val is not None and val >= thr
+        
     @Filter('low_qual_by_depth', 'Low quality by depth', 'min_qd')
     def low_qual_by_depth(self, v):
         thr = self.args.min_qd
@@ -170,19 +177,19 @@ class TNscopeFilter(object):
         return v.info.get('STR') is not None and thr is not None and val is not None and val > thr
 
     @Filter('orientation_bias', 'Orientation bias', 'max_foxog')
-    def depth_high_conf(self, v):
+    def orientation_bias(self, v):
         thr = self.args.max_foxog
         val = v.samples[self.t_smid].get('FOXOG')
         return thr is not None and val is not None and val >= thr
 
     @Filter('strand_bias', 'Strand bias', 'max_sor')
-    def depth_high_conf(self, v):
+    def strand_bias(self, v):
         thr = self.args.max_sor
         val = v.info.get('SOR')
         return thr is not None and val is not None and val > thr
 
     @Filter('noisy_region', 'Variant in noisy region', 'max_ecnt')
-    def depth_high_conf(self, v):
+    def noisy_region(self, v):
         thr = self.args.max_ecnt
         val = v.info.get('ECNT')
         return thr is not None and val is not None and val > thr
