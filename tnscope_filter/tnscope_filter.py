@@ -116,7 +116,7 @@ class TNscopeFilter(object):
     def high_normal_af(self, v):
         thr = self.args.max_normal_af
         val = v.samples[self.n_smid].get('AF')
-        return thr is not None and val is not None and val >= thr
+        return self.n_smid >=0 and thr is not None and val is not None and val >= thr
         
     @Filter('low_qual_by_depth', 'Low quality by depth', 'min_qd')
     def low_qual_by_depth(self, v):
