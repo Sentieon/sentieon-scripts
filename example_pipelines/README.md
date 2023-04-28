@@ -7,6 +7,7 @@ See Sentieon's [Argument Correspondence application note][correspondence] for in
 ## Example pipelines ##
 - **Germline variant calling**
   - [whole-genome sequencing][wgs] - Standard germline variant calling suitable for whole-genome samples.
+  - [whole-genome sequencing with DNAscope][dnascope] - Higher accuracy germline variant calling for whole-genome samples.
   - [whole-exome sequencing][wes] - Standard germline variant calling pipeline across target intervals.
   - [multiple input fastq][multi] - Standard germline variant calling pipeline, modified to support multiple pirrs of input FASTQ files.
   - [joint calling][joint] - Standard germline variant calling pipeline with joint genotyping of multiple samples.
@@ -25,6 +26,7 @@ See Sentieon's [Argument Correspondence application note][correspondence] for in
 
 [correspondence]: https://support.sentieon.com/appnotes/arguments/
 [wgs]: germline/wgs.sh
+[dnascope]: germline/dnascope_wgs.sh
 [wes]: germline/wes-interval.sh
 [multi]: germline/multi-FASTQ.sh
 [joint]: germline/joint-calling.sh
