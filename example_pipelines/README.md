@@ -9,6 +9,7 @@ See Sentieon's [Argument Correspondence application note][correspondence] for in
   - [whole-genome sequencing][wgs] - Standard germline variant calling suitable for whole-genome samples.
   - [whole-genome sequencing with DNAscope][dnascope] - Higher accuracy germline variant calling for whole-genome samples.
   - [whole-exome sequencing][wes] - Standard germline variant calling pipeline across target intervals.
+  - [whole-exome sequencing with DNAscope][dnascope-wes] - Higher accuracy germline variant calling for whole-exome samples.
   - [multiple input fastq][multi] - Standard germline variant calling pipeline, modified to support multiple pirrs of input FASTQ files.
   - [joint calling][joint] - Standard germline variant calling pipeline with joint genotyping of multiple samples.
   - [CCDG/functional equivalence pipeline][ccdg] - A Centers for Common Disease Genomics (CCDG) functional equivalent pipeline implemented in the Sentieon tools. See Sentieon's [Functional Equivalent Pipeline application note][fe-app] for more information.
@@ -28,6 +29,7 @@ See Sentieon's [Argument Correspondence application note][correspondence] for in
 [wgs]: germline/wgs.sh
 [dnascope]: germline/dnascope_wgs.sh
 [wes]: germline/wes-interval.sh
+[dnascope-wes]: germline/dnascope_wes.sh
 [multi]: germline/multi-FASTQ.sh
 [joint]: germline/joint-calling.sh
 [ccdg]: germline/ccdg_functional-equivalent.sh
