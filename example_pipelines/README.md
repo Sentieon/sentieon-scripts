@@ -26,15 +26,15 @@ See Sentieon's [Argument Correspondence application note][correspondence] for in
     - [TNhaplotyper2][tnhap2] - Somatic variant calling with TNhaplotyper2.
 
 [correspondence]: https://support.sentieon.com/appnotes/arguments/
-[wgs]: germline/wgs.sh
-[dnascope]: germline/dnascope_wgs.sh
-[wes]: germline/wes-interval.sh
-[dnascope-wes]: germline/dnascope_wes.sh
-[multi]: germline/multi-FASTQ.sh
-[joint]: germline/joint-calling.sh
-[ccdg]: germline/ccdg_functional-equivalent.sh
+[wgs]: germline/DNAseq/wgs.sh
+[dnascope]: germline/DNAscope/wgs.sh
+[wes]: germline/DNAseq/wes-interval.sh
+[dnascope-wes]: germline/DNAscope/wes-interval.sh
+[multi]: germline/DNAseq/multi-FASTQ.sh
+[joint]: germline/DNAseq/joint-calling.sh
+[ccdg]: germline/DNAseq/ccdg_functional-equivalent.sh
 [fe-app]: https://support.sentieon.com/appnotes/functional_equivalent/
-[rna]: germline/RNAseq-calling.sh
+[rna]: germline/DNAseq/RNAseq-calling.sh
 [rna-doc]: https://support.sentieon.com/manual/RNA_call/rna/
 [tnscope]: somatic/TNscope/default.sh
 [50x]: somatic/TNscope/50x_to_100x.sh
