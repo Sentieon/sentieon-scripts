@@ -17,13 +17,14 @@ See Sentieon's [Argument Correspondence application note][correspondence] for in
 - **Somatic variant calling**
   - *TNscope* - Improved accuracy somatic variant calling.
     - [default][tnscope] - Standard somatic variant calling with TNscope.
-    - [50x to 100x][50x] - Somatic variant calling with TNscope. Recommended settings for 50x to 100x coverage.
-    - [300x or greater][300x] - Somatic variant calling with TNscope. Recommended settings for coverage over 300x.
-    - [unique molecular identifier (UMI)][umi] - Somatic variant calling and filtering of UMI-tagged reads.
+    - [ml-model][ml-model] - TNscope somatic variant calling using a machine learning model.
+    - [amplicon][tn-amplicon] - Somatic variant calling from amplicon data using a matched normal sample.
+    - [ctDNA][tn-ctDNA] - Somatic variant calling from cfDNA tumor-only samples.
+    - [ctDNA with UMI][tn-ctDNA-umi] - Somatic variant calling from cfDNA tumor-only samples with UMI-tagged reads.
+    - [target capture][tn-targeted] - Somatic variant calling from hybridization catpure data using a matched normal sample.
   - *TNseq* - Pipelines matching best practice implementations for somatic variant calling.
     - [tumor-normal][tn-paired] - Somatic variant calling with TNsnv and TNhaplotyper from paired tumor-normal samples.
     - [tumor-only][tumor-only] - Somatic variant calling with TNsnv and TNhaplotyper from tumor-only samples.
-    - [TNhaplotyper2][tnhap2] - Somatic variant calling with TNhaplotyper2.
 
 [correspondence]: https://support.sentieon.com/appnotes/arguments/
 [wgs]: germline/DNAseq/wgs.sh
@@ -37,9 +38,10 @@ See Sentieon's [Argument Correspondence application note][correspondence] for in
 [rna]: germline/DNAseq/RNAseq-calling.sh
 [rna-doc]: https://support.sentieon.com/manual/RNA_call/rna/
 [tnscope]: somatic/TNscope/default.sh
-[50x]: somatic/TNscope/50x_to_100x.sh
-[300x]: somatic/TNscope/300x_or_greater.sh
-[umi]: somatic/TNscope/umi.sh
+[ml-model]: somatic/TNscope/ml-model.sh
+[tn-amplicon]: somatic/TNscope/Somatic_amplicon_panel.sh
+[tn-ctDNA]: somatic/TNscope/Somatic_ctDNA_without_UMI.sh
+[tn-ctDNA-umi]: somatic/TNscope/Somatic_ctDNA_with_UMI.sh
+[tn-targeted]: somatic/TNscope/Somatic_hybridization_panel.sh
 [tn-paired]: somatic/TNseq/tumor_normal.sh
 [tumor-only]: somatic/TNseq/tumor_only.sh
-[tnhap2]: somatic/TNseq/TNhaplotyper2.sh
