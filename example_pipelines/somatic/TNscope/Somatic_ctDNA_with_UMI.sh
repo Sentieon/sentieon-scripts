@@ -56,13 +56,13 @@ fi
   ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C \
   -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT \
   -K 10000000 $FASTA - || { echo -n 'BWA error'; exit 1; } ) | \
-  $SENTIEON_INSTALL_DIR/bin/sentieon umi consensus -o umi_consensus.fastq.gz || \
+  $SENTIEON_INSTALL_DIR/bin/sentieon umi consensus -t $NT -o umi_consensus.fastq.gz || \
   { echo "Alignment/Consensus failed"; exit 1; }
 
 ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C \
     -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT -K 10000000 \
     $FASTA umi_consensus.fastq.gz || { echo -n 'BWA error'; exit 1; } ) | \
-    $SENTIEON_INSTALL_DIR/bin/sentieon util sort --umi_post_process --sam2bam -i - \
+    $SENTIEON_INSTALL_DIR/bin/sentieon util sort -t $NT --umi_post_process --sam2bam -i - \
     -o umi_consensus.bam || { echo "Consensus alignment failed"; exit 1; }
 
 # ******************************************
