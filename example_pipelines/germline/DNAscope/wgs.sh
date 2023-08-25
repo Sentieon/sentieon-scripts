@@ -20,7 +20,7 @@ FASTQ_2="$FASTQ_FOLDER/2.fastq.gz" #If using Illumina paired data
 
 # Update with the location to the DNAscope model file
 # Model files can be found at, https://github.com/Sentieon/sentieon-models
-DNASCOPE_MODEL=/home/pipeline/models/SentieonDNAscopeModel1.1.model
+DNASCOPE_MODEL=/home/pipeline/models/DNAscopeIlluminaWGS2.0.bundle
 
 # Update with the location of the reference data files
 FASTA_DIR="/home/regression/references/b37/"
@@ -60,7 +60,8 @@ cd $WORKDIR
 # ******************************************
 #The results of this call are dependent on the number of threads used. To have number of threads independent results, add chunk size option -K 10000000 
 ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -R "@RG\tID:$RGID\tSM:$SM\tPL:$PL" \
-    -t $NT -K 10000000 $FASTA $FASTQ_1 $FASTQ_2 || { echo -n 'BWA error'; exit 1; } ) | \
+    -t $NT -K 10000000 -x $DNASCOPE_MODEL/bwa.model \
+    $FASTA $FASTQ_1 $FASTQ_2 || { echo -n 'BWA error'; exit 1; } ) | \
     $SENTIEON_INSTALL_DIR/bin/sentieon util sort -r $FASTA -o sorted.bam -t $NT \
     --sam2bam -i - || { echo "Alignment failed"; exit 1; }
 
@@ -98,7 +99,7 @@ if [ "$PCRFREE" = true ]; then
     indel_model_arg="--pcr_indel_model none"
 fi
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam \
-    --algo DNAscope $indel_model_arg --model $DNASCOPE_MODEL \
+    --algo DNAscope $indel_model_arg --model $DNASCOPE_MODEL/dnascope.model \
     -d $KNOWN_DBSNP output-ds_tmp.vcf.gz || \
     { echo "DNAscope failed"; exit 1; }
 
@@ -106,6 +107,6 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i deduped.bam \
 # 4b. Variant filtering and genotyping
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT \
-    --algo DNAModelApply --model $DNASCOPE_MODEL \
+    --algo DNAModelApply --model $DNASCOPE_MODEL/dnascope.model \
     -v output-ds_tmp.vcf.gz output-ds.vcf.gz || \
     { echo "DNAModelApply failed"; exit 1; }
