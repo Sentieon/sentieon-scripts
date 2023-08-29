@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# The script performs germline variant calling from PacBio HiFi reads with Sentieon DNAscope
+# The script performs germline variant calling from ONT long reads with Sentieon DNAscope
 
 #### Argument Parsing ####
 die()
@@ -25,7 +25,7 @@ _arg_gvcf="off"
 
 print_help()
 {
-    printf '%s\n' "Call small variants from PacBio HiFi reads with Sentieon DNAscope"
+    printf '%s\n' "Call small variants from ONT long reads with Sentieon DNAscope"
     printf 'Usage: %s -r <reference> -i <sample-input> -m <model-file> [-d <dbSNP>] [-b <regions>] [-t <threads>] [-g] [-h] [--] <output-vcf>\n' "$0"
     printf '\t%s\n' "<output-vcf>: The output VCF file."
     printf '\t%s\n' "-r: The reference FASTA file. (required)"
