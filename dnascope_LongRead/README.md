@@ -12,7 +12,11 @@ In order to run the pipeline scripts in this folder, you need to use the Sentieo
 
 ## Input data requirements
 
-### Aligned reads
+### Aligned reads - PacBio HiFi
+
+The pipeline will accept PacBio HiFi long reads that have been aligned to the reference genome with `minimap2` or `pbmm2`. When aligning reads with Sentieon minimap2, using the Sentieon model for HiFi reads is recommended. When aligning reads with the open-source minimap2, `-x map-hifi` is recommended.
+
+### Aligned reads - ONT
 
 The pipeline will accept Oxford Nanopore (ONT) long reads that have been aligned to the reference genome with `minimap2`. When aligning reads with Sentieon minimap2, using the Sentieon model for ONT is recommended. When aligning reads with the open-source minimap2, `-x map-ont` is recommended.
 
@@ -23,29 +27,34 @@ DNAscope LongRead will call variants present in the sample relative to a high qu
 
 ## Usage
 
-A single command is run to call variants:
+A single command is run to call variants from PacBio HiFi reads:
+```sh
+dnascope_HiFi.sh [-h] -r REFERENCE -i INPUT_BAM -m MODEL_BUNDLE [-d DBSNP_VCF] [-b DIPLOID_BED] [-t NUMBER_THREADS] [-g]  [--] VARIANT_VCF
+```
+
+A single command is run to call variants from ONT long reads:
 ```sh
 dnascope_ONT.sh [-h] -r REFERENCE -i INPUT_BAM -m MODEL_BUNDLE [-d DBSNP_VCF] [-b DIPLOID_BED] [-t NUMBER_THREADS] [-g]  [--] VARIANT_VCF
 ```
 
-The Sentieon LongRead pipeline for ONT requires the following arguments:
+The Sentieon LongRead pipeline requires the following arguments:
 - `-r REFERENCE`: the location of the reference FASTA file. You should make sure that the reference is the same as the one used in the mapping stage.
 - `-i INPUT_BAM`: the location of the input BAM or CRAM file.
-- `-m MODEL_BUNDLE`: the location of the model bundle for ONT.
+- `-m MODEL_BUNDLE`: the location of the model bundle.
 
-The Sentieon LongRead pipeline for ONT accepts the following optional arguments:
+The Sentieon LongRead pipeline accepts the following optional arguments:
 - `-d DBSNP_VCF`: the location of the Single Nucleotide Polymorphism database (dbSNP) used to label known variants. Only one file is supported. Supplying this file will annotate variants with their dbSNP refSNP ID numbers.
 - `-b DIPLOID_BED`: interval in the reference to restrict variant calling, in BED file format. Supplying this file will limit variant calling to the intervals inside the BED file.
 - `-t NUMBER_THREADS`: number of computing threads that will be used by the software to run parallel processes. The argument is optional; if omitted, the pipeline will use as many threads as the server has.
 - `-g`: output variants in the gVCF format, in addition to the VCF output file. The tool will output a bgzip compressed gVCF file with a corresponding index file.
 - `-h`: print the command-line help and exit.
 
-The Sentieon LongRead pipeline for ONT requires the following positional arguments:
+The Sentieon LongRead pipeline requires the following positional arguments:
 - `VARIANT_VCF`: the location and filename of the variant calling output. The tool will output a bgzip compressed VCF file with a corresponding index file.
 
 ## Pipeline output
 
-The Sentieon LongRead pipeline for ONT will output a bgzip compressed file (.vcf.gz) containing variant calls in the standard VCFv4.2 format along with a tabix index file (.vcf.gz.tbi). If the `-g` option is used, the pipeline will also output a bgzip compressed file (.g.vcf.gz) containing variant calls in the gVCF format along with a tabix index file (.g.vcf.gz.tbi).
+The Sentieon LongRead pipeline will output a bgzip compressed file (.vcf.gz) containing variant calls in the standard VCFv4.2 format along with a tabix index file (.vcf.gz.tbi). If the `-g` option is used, the pipeline will also output a bgzip compressed file (.g.vcf.gz) containing variant calls in the gVCF format along with a tabix index file (.g.vcf.gz.tbi).
 
 ## Other considerations
 

@@ -154,7 +154,7 @@ def sharded_run(
     shards = sharder.cut(contigs, step)
     return sharder.run(shards, func, None, *args)
 
-def open_vcfs(input_vcf_fns, output_vcf_fns, update=None):
+def open_vcfs(input_vcf_fns, output_vcf_fns, update=None, hdr_idx=0):
     input_vcfs = []
     for vcf_fn in input_vcf_fns:
         try:
@@ -172,7 +172,8 @@ def open_vcfs(input_vcf_fns, output_vcf_fns, update=None):
     for i, vcf_fn in enumerate(output_vcf_fns):
         try:
             out_vcf = vcflib.VCF(vcf_fn, "w")
-            out_vcf.copy_header(input_vcfs[0], update=update)
+            _hdr_idx = i if hdr_idx is None else hdr_idx
+            out_vcf.copy_header(input_vcfs[_hdr_idx], update=update)
             out_vcf.emit_header()
             output_vcfs.append(out_vcf)
         except EnvironmentError as err:
@@ -193,6 +194,7 @@ def merge_main(args):
         update=(
             '##FORMAT=<ID=PS,Number=1,Type=Integer,Description="Phase set identifier">',
         ),
+        hdr_idx=3,
     )
     bed = IntervalList(args.bed)
     merge_args = input_vcfs + output_vcfs + [bed]
@@ -290,14 +292,35 @@ def split1(f, v):
         yield u
 
 def patch1_main(args):
-    input_vcfs, output_vcfs = open_vcfs(
-        (args.phased, args.hap1_hp, args.hap2_hp),
-        (args.patch1, args.patch2),
-        update=(
-            '##INFO=<ID=DELTA,Number=0,Type=Flag,Description="Delta flag">',
-        ),
-    )
-    input_vcfs.insert(1, None)
+    if (not args.phased and (not args.hap1 or not args.hap2)) or (
+        args.phased and (args.hap1 or args.hap2)
+    ):
+        print(
+            "Either the --phased VCF or both the --hap1 and --hap2 VCFs are"
+            " required"
+        )
+        sys.exit(1)
+
+    input_vcfs, output_vcfs = [], []
+    if args.phased:
+        input_vcfs, output_vcfs = open_vcfs(
+            (args.phased, args.hap1_hp, args.hap2_hp),
+            (args.patch1, args.patch2),
+            update=(
+                '##INFO=<ID=DELTA,Number=0,Type=Flag,Description="Delta flag">',
+            ),
+        )
+        input_vcfs.insert(1, None)
+    else:
+        input_vcfs, output_vcfs = open_vcfs(
+            (args.hap1, args.hap2, args.hap1_hp, args.hap2_hp),
+            (args.patch1, args.patch2),
+            update=(
+                '##INFO=<ID=DELTA,Number=0,Type=Flag,Description="Delta flag">',
+            ),
+            hdr_idx=None,
+        )
+
     vcfs = input_vcfs + output_vcfs
     result = sharded_run(
         args.thread_count,
@@ -344,14 +367,14 @@ def patch1(vcfi1, vcfi2, vcfd1, vcfd2, vcfo1, vcfo2, **kwargs):
             continue
 
         if v1:
-            if v1 == d1:
+            if v1 == d1 or vcfi2 and v1.info.get('STR') and v1.info.get('RPA')[0]>=4:
                 v1.info['DELTA'] = True
             v1.info.pop('ML_PROB', None)
             v1.filter = []
             v1.line = None
             vcfo1.emit(v1)
         if v2:
-            if v2 == d2:
+            if v2 == d2 or vcfi2 and v2.info.get('STR') and v2.info.get('RPA')[0]>=4:
                 v2.info['DELTA'] = True
             v2.info.pop('ML_PROB', None)
             v2.filter = []
@@ -653,14 +676,14 @@ def parse_args(argv=None):
         "--patch2", required=True, help="The output patch2 VCF"
     )
     haploid_patch_parser.add_argument(
-        "--phased", required=True, help="The phased VCF"
-    )
-    haploid_patch_parser.add_argument(
         "--hap1_hp", required=True, help="The hap1 DNAscopeHP VCF"
     )
     haploid_patch_parser.add_argument(
         "--hap2_hp", required=True, help="The hap2 DNAscopeHP VCF"
     )
+    haploid_patch_parser.add_argument("--phased", help="The phased VCF")
+    haploid_patch_parser.add_argument("--hap1", help="The hap1 VCF")
+    haploid_patch_parser.add_argument("--hap2", help="The hap2 VCF")
     haploid_patch_parser.set_defaults(func=patch1_main)
 
     patch_parser = subparsers.add_parser(

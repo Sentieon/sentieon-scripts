@@ -30,8 +30,13 @@ class Combiner(vcflib.Shardable, vcflib.ShardResult):
         self.gvcf_out.copy_header(self.gvcf_in, extras)
         self.gvcf_out.emit_header()
         if self.stdout:
-            for h in self.gvcf_out.headers:
-                sys.stdout.write(h + '\n')
+            chr_line = ""
+            for line in self.gvcf_out.headers:
+                if line.startswith('#CHROM'):
+                    chr_line = line
+                    continue
+                sys.stdout.write(line + '\n')
+            sys.stdout.write(chr_line + '\n')
     
     @staticmethod
     def extra_headers(vcf1, vcf2):
