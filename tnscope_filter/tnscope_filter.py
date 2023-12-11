@@ -71,6 +71,7 @@ class TNscopeFilter(object):
             'min_read_pos_ranksum': -2.78,
             'min_base_qual_ranksum': -5.85,
             'min_depth_high_conf':3.5,
+            'min_qd':9.9,
         },
         'ctdna_umi': {
             'clear': 'triallelic_site',
@@ -118,13 +119,13 @@ class TNscopeFilter(object):
         val = v.samples[self.n_smid].get('AF')
         return self.n_smid >=0 and thr is not None and val is not None and val >= thr
         
-    @Filter('low_qual_by_depth', 'Low quality by depth', 'min_qd')
+    @Filter('low_qual_by_depth', 'Low QUAL score normalized by allele depth', 'min_qd')
     def low_qual_by_depth(self, v):
         thr = self.args.min_qd
         val = v.samples[self.t_smid].get('AD')
         if not isinstance(val, list) or v.qual is None or thr is None:
             return False
-        return v.qual < thr * sum(val)
+        return v.qual < thr * sum(val[1:])
 
     @Filter('read_pos_bias', 'Alt vs. Ref read position bias', 'min_read_pos_ranksum')
     def read_pos_bias(self, v):
