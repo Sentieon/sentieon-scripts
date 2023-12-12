@@ -56,39 +56,48 @@ fi
   ( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C \
   -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT \
   -K 10000000 $FASTA - || { echo -n 'BWA error'; exit 1; } ) | \
-  $SENTIEON_INSTALL_DIR/bin/sentieon umi consensus -t $NT -o umi_consensus.fastq.gz || \
-  { echo "Alignment/Consensus failed"; exit 1; }
-
-( $SENTIEON_INSTALL_DIR/bin/sentieon bwa mem -p -C \
-    -R "@RG\tID:$TUMOR_RGID\tSM:$TUMOR_SM\tPL:$PL" -t $NT -K 10000000 \
-    $FASTA umi_consensus.fastq.gz || { echo -n 'BWA error'; exit 1; } ) | \
-    $SENTIEON_INSTALL_DIR/bin/sentieon util sort -t $NT --umi_post_process --sam2bam -i - \
-    -o umi_consensus.bam || { echo "Consensus alignment failed"; exit 1; }
+  $SENTIEON_INSTALL_DIR/bin/sentieon util sort -t $NT -r $FASTA --sam2bam -i - \
+  -o tumor_sorted.bam || \
+  { echo "Alignment failed"; exit 1; }
 
 # ******************************************
-# 2. Somatic and Structural variant calling
+# 2. Remove duplicate reads for the tumor sample
+# use the consensus-based approach with UMI.
+# It is possible to remove instead of mark
+# duplicates by adding the --rmdup option in Dedup
 # ******************************************
-# Consider adding `--disable_detector sv --trim_soft_clip` if not interested in SV calling
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i umi_consensus.bam \
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam --algo LocusCollector \
+    --consensus --umi_tag XR --fun score_info tumor_score.txt || { echo "LocusCollector failed"; exit 1; }
+
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam -r $FASTA --algo Dedup \
+    --score_info tumor_score.txt --metrics tumor_dedup_metrics.txt tumor_deduped.bam || \
+    { echo "Dedup failed"; exit 1; }
+
+# ******************************************
+# 3. Somatic and Structural variant calling
+# ******************************************
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
     ${INTERVAL_FILE:+--interval $INTERVAL_FILE} \
     --algo TNscope \
     --tumor_sample $TUMOR_SM \
     --dbsnp $KNOWN_DBSNP \
-    --min_tumor_allele_frac 0.001 \
+    --disable_detector sv \
+    --min_tumor_allele_frac 3e-3 \
     --min_tumor_lod 3.0 \
-    --min_init_tumor_lod 3.0 \
+    --min_init_tumor_lod 1.0 \
+    --assemble_mode 4 \
     --pcr_indel_model NONE \
     --min_base_qual 40 \
     --resample_depth 100000 \
-    --assemble_mode 4 \
     output_tnscope.pre_filter.vcf.gz || \
     { echo "TNscope failed"; exit 1; }
 
-#### The output of TNscope requires filtering to remove false positives.
-#### Filter design depends on the specific sample and user needs to modify the following accordingly.
+# ******************************************
+# 4. Variant filtration
+# ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon pyexec $TNSCOPE_FILTER \
     -v output_tnscope.pre_filter.vcf.gz \
     --tumor_sample $TUMOR_SM \
-    -x ctdna_umi --min_tumor_af 0.001 --min_depth 1000 \
+    -x ctdna --min_tumor_af 0.001 --min_depth 1000 \
     output_tnscope.filter.vcf.gz || \
     { echo "TNscope filter failed"; exit 1; }

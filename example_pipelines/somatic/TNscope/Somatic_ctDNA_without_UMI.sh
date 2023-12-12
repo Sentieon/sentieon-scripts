@@ -55,47 +55,23 @@ cd $WORKDIR
     { echo "Alignment failed"; exit 1; }
 
 # ******************************************
-# 2. Metrics for the tumor sample
-# ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_sorted.bam \
-    --algo MeanQualityByCycle tumor_mq_metrics.txt \
-    --algo QualDistribution tumor_qd_metrics.txt --algo GCBias \
-    --summary tumor_gc_summary.txt tumor_gc_metrics.txt --algo AlignmentStat \
-    --adapter_seq '' tumor_aln_metrics.txt --algo InsertSizeMetricAlgo tumor_is_metrics.txt || \
-    { echo "Metrics failed"; exit 1; }
-
-$SENTIEON_INSTALL_DIR/bin/sentieon plot GCBias -o tumor_gc-report.pdf tumor_gc_metrics.txt
-$SENTIEON_INSTALL_DIR/bin/sentieon plot QualDistribution \
-    -o tumor_qd-report.pdf tumor_qd_metrics.txt
-$SENTIEON_INSTALL_DIR/bin/sentieon plot MeanQualityByCycle \
-    -o tumor_mq-report.pdf tumor_mq_metrics.txt
-$SENTIEON_INSTALL_DIR/bin/sentieon plot InsertSizeMetricAlgo \
-    -o tumor_is-report.pdf tumor_is_metrics.txt
-
-# ******************************************
-# 3. Remove duplicate reads for the tumor sample. 
+# 2. Remove duplicate reads for the tumor sample
+# use the consensus-based approach.
 # It is possible to remove instead of mark 
 # duplicates by adding the --rmdup option in Dedup
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam --algo LocusCollector \
-    --fun score_info tumor_score.txt || { echo "LocusCollector failed"; exit 1; }
+    --consensus --fun score_info tumor_score.txt || { echo "LocusCollector failed"; exit 1; }
 
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam --algo Dedup \
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam -r $FASTA --algo Dedup \
     --score_info tumor_score.txt --metrics tumor_dedup_metrics.txt tumor_deduped.bam || \
     { echo "Dedup failed"; exit 1; }
 
 # ******************************************
-# 4. Coverage metrics for the tumor sample
+# 3. Somatic and Structural variant calling
 # ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT ${INTERVAL_FILE:+--interval $INTERVAL_FILE} -i tumor_deduped.bam \
-    --algo CoverageMetrics tumor_coverage_metrics || { echo "CoverageMetrics failed"; exit 1; }
-
-# ******************************************
-# 5. Somatic and Structural variant calling
-# ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT \
+$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
     ${INTERVAL_FILE:+--interval $INTERVAL_FILE} \
-    -i tumor_deduped.bam \
     --algo TNscope \
     --tumor_sample $TUMOR_SM \
     --dbsnp $KNOWN_DBSNP \
@@ -103,12 +79,15 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT \
     --min_tumor_allele_frac 3e-3 \
     --min_tumor_lod 3.0 \
     --min_init_tumor_lod 1.0 \
-    --assemble_mode 2 \
+    --assemble_mode 4 \
+    --pcr_indel_model NONE \
+    --min_base_qual 40 \
+    --resample_depth 100000 \
     output_tnscope.pre_filter.vcf.gz || \
     { echo "TNscope failed"; exit 1; }
 
 # ******************************************
-# 6. Variant filtration
+# 4. Variant filtration
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon pyexec $TNSCOPE_FILTER \
     -v output_tnscope.pre_filter.vcf.gz \
