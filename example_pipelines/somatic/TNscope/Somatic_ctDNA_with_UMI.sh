@@ -70,7 +70,7 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam --algo Locu
     --consensus --umi_tag XR --fun score_info tumor_score.txt || { echo "LocusCollector failed"; exit 1; }
 
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam -r $FASTA --algo Dedup \
-    --score_info tumor_score.txt --metrics tumor_dedup_metrics.txt tumor_deduped.bam || \
+    --score_info tumor_score.txt tumor_deduped.bam || \
     { echo "Dedup failed"; exit 1; }
 
 # ******************************************
