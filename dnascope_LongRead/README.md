@@ -1,3 +1,8 @@
+## *Notice*
+
+The shell scripts for running the DNAscope LongRead pipeline are deprecated. New users should run the DNAscope LongRead pipeline using the sentieon-cli tool, https://github.com/Sentieon/sentieon-cli/blob/main/docs/dnascope-longread.md.
+
+
 # DNAscope LongRead pipeline scripts
 
 Sentieon DNAscope LongRead is a pipeline for calling germline SNVs and indels from long-read sequence data. The DNAscope LongRead pipeline is able to take advantage of longer read lengths to perform quick and accurate variant calling using specially calibrated machine learning models.
