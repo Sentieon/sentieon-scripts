@@ -28,8 +28,7 @@ NORMAL_FASTQ_2="$FASTQ_FOLDER/normal_2.fastq.gz" #If using Illumina paired data
 FASTA_DIR="/home/regression/references/b37/"
 FASTA="$FASTA_DIR/human_g1k_v37_decoy.fasta"
 KNOWN_DBSNP="$FASTA_DIR/dbsnp_138.b37.vcf.gz"
-KNOWN_INDELS="$FASTA_DIR/1000G_phase1.indels.b37.vcf.gz"
-KNOWN_MILLS="$FASTA_DIR/Mills_and_1000G_gold_standard.indels.b37.vcf.gz"
+PON=  # the TNscope panel-of-normals VCF
 
 # Update with the location of the Sentieon software package and license file
 SENTIEON_INSTALL_DIR=/home/release/sentieon-genomics-|release_version|
@@ -145,41 +144,17 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i normal_sorted.bam --algo Ded
     { echo "Dedup2 failed"; exit 1; }
 
 # ******************************************
-# 4a. Base recalibration for tumor sample
-# ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS tumor_recal_data.table
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    -q tumor_recal_data.table --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS \
-    -k $KNOWN_INDELS tumor_recal_data.table.post
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
-    --before tumor_recal_data.table --after tumor_recal_data.table.post tumor_recal.csv
-$SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o tumor_recal_plots.pdf tumor_recal.csv
-
-# ******************************************
-# 4b. Base recalibration for normal sample
-# ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i normal_deduped.bam \
-    --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS normal_recal_data.table
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i normal_deduped.bam \
-    -q normal_recal_data.table --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS \
-    -k $KNOWN_INDELS normal_recal_data.table.post
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
-    --before normal_recal_data.table --after normal_recal_data.table.post normal_recal.csv
-$SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o normal_recal_plots.pdf normal_recal.csv
-
-# ******************************************
-# 5. Somatic and Structural variant calling
+# 4. Somatic and Structural variant calling
 # ******************************************
 # Consider adding `--disable_detector sv --trim_soft_clip` if not interested in SV calling
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    -i normal_deduped.bam -q tumor_recal_data.table -q normal_recal_data.table \
+    -i normal_deduped.bam \
     --algo TNscope --tumor_sample $TUMOR_SM --normal_sample $NORMAL_SM \
-    --dbsnp $KNOWN_DBSNP output_tnscope.pre_filter.vcf.gz || \
+    --dbsnp $KNOWN_DBSNP ${PON:+--pon $PON} output_tnscope.pre_filter.vcf.gz || \
     { echo "TNscope failed"; exit 1; }
 
 # ******************************************
-# 6. Variant filtration
+# 5. Variant filtration
 # ******************************************
 ( $BCFTOOLS_BINARY annotate -x "FILTER/triallelic_site" output_tnscope.pre_filter.vcf.gz || \
         { echo "VCF filtering failed"; exit 1; } ) | \
