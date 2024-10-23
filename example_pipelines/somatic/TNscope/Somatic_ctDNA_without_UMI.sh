@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (c) 2016-2020 Sentieon Inc. All rights reserved
+# Copyright (c) 2016-2024 Sentieon Inc. All rights reserved
 
 # *******************************************
 # Script to perform TNscope variant calling on

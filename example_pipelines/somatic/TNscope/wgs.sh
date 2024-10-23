@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright (c) 2016-2020 Sentieon Inc. All rights reserved
+# Copyright (c) 2016-2024 Sentieon Inc. All rights reserved
 
 # *******************************************
 # Script to perform TNscope variant calling on
@@ -85,7 +85,9 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_sorted.bam \
     --algo MeanQualityByCycle tumor_mq_metrics.txt \
     --algo QualDistribution tumor_qd_metrics.txt --algo GCBias \
     --summary tumor_gc_summary.txt tumor_gc_metrics.txt --algo AlignmentStat \
-    --adapter_seq '' tumor_aln_metrics.txt --algo InsertSizeMetricAlgo tumor_is_metrics.txt || \
+    --adapter_seq '' tumor_aln_metrics.txt \
+    --algo InsertSizeMetricAlgo tumor_is_metrics.txt \
+    --algo CoverageMetrics tumor_coverage_metrics || \
     { echo "Metrics1 failed"; exit 1; }
 
 $SENTIEON_INSTALL_DIR/bin/sentieon plot GCBias -o tumor_gc-report.pdf tumor_gc_metrics.txt
@@ -103,7 +105,9 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i normal_sorted.bam 
     --algo MeanQualityByCycle normal_mq_metrics.txt \
     --algo QualDistribution normal_qd_metrics.txt --algo GCBias \
     --summary normal_gc_summary.txt normal_gc_metrics.txt --algo AlignmentStat \
-    --adapter_seq '' normal_aln_metrics.txt --algo InsertSizeMetricAlgo normal_is_metrics.txt || \
+    --adapter_seq '' normal_aln_metrics.txt \
+    --algo InsertSizeMetricAlgo normal_is_metrics.txt \
+    --algo CoverageMetrics normal_coverage_metrics || \
     { echo "Metrics2 failed"; exit 1; }
 
 $SENTIEON_INSTALL_DIR/bin/sentieon plot GCBias -o normal_gc-report.pdf normal_gc_metrics.txt
@@ -139,18 +143,6 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i normal_sorted.bam --algo Loc
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i normal_sorted.bam --algo Dedup \
     --score_info normal_score.txt --metrics normal_dedup_metrics.txt normal_deduped.bam || \
     { echo "Dedup2 failed"; exit 1; }
-
-# ******************************************
-# 2a. Coverage metrics for normal sample
-# ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i normal_deduped.bam \
-    --algo CoverageMetrics normal_coverage_metrics || { echo "CoverageMetrics1 failed"; exit 1; }
-
-# ******************************************
-# 2b. Coverage metrics for tumor sample
-# ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    --algo CoverageMetrics tumor_coverage_metrics || { echo "CoverageMetrics2 failed"; exit 1; }
 
 # ******************************************
 # 4a. Base recalibration for tumor sample
