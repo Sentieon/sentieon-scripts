@@ -144,34 +144,10 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i normal_sorted.bam --algo Ded
     { echo "Dedup2 failed"; exit 1; }
 
 # ******************************************
-# 4a. Base recalibration for tumor sample
+# 4. Somatic variant calling
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS tumor_recal_data.table
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    -q tumor_recal_data.table --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS \
-    -k $KNOWN_INDELS tumor_recal_data.table.post
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
-    --before tumor_recal_data.table --after tumor_recal_data.table.post tumor_recal.csv
-$SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o tumor_recal_plots.pdf tumor_recal.csv
-
-# ******************************************
-# 4b. Base recalibration for normal sample
-# ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i normal_deduped.bam \
-    --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS -k $KNOWN_INDELS normal_recal_data.table
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i normal_deduped.bam \
-    -q normal_recal_data.table --algo QualCal -k $KNOWN_DBSNP -k $KNOWN_MILLS \
-    -k $KNOWN_INDELS normal_recal_data.table.post
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT --algo QualCal --plot \
-    --before normal_recal_data.table --after normal_recal_data.table.post normal_recal.csv
-$SENTIEON_INSTALL_DIR/bin/sentieon plot QualCal -o normal_recal_plots.pdf normal_recal.csv
-
-# ******************************************
-# 5. Somatic variant calling
-# ******************************************
-$SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam \
-    -i normal_deduped.bam -q tumor_recal_data.table -q normal_recal_data.table \
+    -i normal_deduped.bam \
     --algo TNscope --tumor_sample $TUMOR_SM --normal_sample $NORMAL_SM \
     --dbsnp $KNOWN_DBSNP --clip_by_minbq 1 --max_error_per_read 3 --min_init_tumor_lod 2.0 \
     --min_base_qual 10 --min_base_qual_asm 10 --min_tumor_allele_frac 0.00005 \
