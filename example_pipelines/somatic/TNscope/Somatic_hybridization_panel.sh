@@ -149,7 +149,6 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT \
     --max_normal_alt_qsum 250 \
     --sv_mask_ext 10 \
     --prune_factor 0 \
-    --assemble_mode 2 \
     output_tnscope.pre_filter.vcf.gz || \
     { echo "TNscope failed"; exit 1; }
 
