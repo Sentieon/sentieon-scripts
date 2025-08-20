@@ -30,7 +30,7 @@ import heapq
 import json
 import struct
 import sys
-import urlparse
+import urllib.parse
 import zlib
 
 try:
@@ -38,13 +38,14 @@ try:
     def s3open(path):
         if path.startswith('s3://'):
             return S3File(path)
-        return open(path)
+        return open(path, 'rb')
 except ImportError:
-    s3open = open
+    def s3open(path):
+        return open(path, 'rb')
 
 class S3File(object):
     def __init__(self, path):
-        url = urlparse.urlparse(path)
+        url = urllib.parse.urlparse(path)
         self.bucket = url.netloc
         self.key = url.path[1:]
         self.iosize = 1024*1024
@@ -88,8 +89,8 @@ class S3File(object):
         if self.client is None:
             raise RuntimeError('File closed')
         if size is None:
-            size = sys.maxint
-        data = ''
+            size = sys.maxsize
+        data = b''
         while size > 0:
             if self.bufptr == self.buflen:
                 if self.fill() <= 0:
@@ -121,12 +122,12 @@ class S3File(object):
 
 class BAMIndex(object):
     SHIFTS = (14, 17, 20, 23, 26, 29)
-    MAXBIN = ((1 << SHIFTS[-1]-SHIFTS[0]+3) - 1) / 7 + 1
+    MAXBIN = ((1 << SHIFTS[-1]-SHIFTS[0]+3) - 1) // 7 + 1
     MAGIC = 0x01494142
 
     def __init__(self, bamf):
         self.chrs = None
-        self.minoff = sys.maxint
+        self.minoff = sys.maxsize
         self.maxoff = 0
         base = bamf
         while base:
@@ -153,14 +154,14 @@ class BAMIndex(object):
                 raise RuntimeError('Not a bam index file')
             chrs = []
             n_ref, = s4.unpack_from(data, off); off += s4.size
-            for _ in xrange(n_ref):
+            for _ in range(n_ref):
                 bins = {}
                 n_bin, = s4.unpack_from(data, off); off += s4.size
-                for _ in xrange(n_bin):
+                for _ in range(n_bin):
                     bin, = s4.unpack_from(data, off); off += s4.size
                     chunks = []
                     n_chunk, = s4.unpack_from(data, off); off += s4.size
-                    for _ in xrange(n_chunk):
+                    for _ in range(n_chunk):
                         s, = s8.unpack_from(data, off); off += s8.size
                         e, = s8.unpack_from(data, off); off += s8.size
                         chunks.append((s, e))
@@ -170,7 +171,7 @@ class BAMIndex(object):
                     bins[bin] = chunks
                 intvs = []
                 n_intv, = s4.unpack_from(data, off); off += s4.size
-                for _ in xrange(n_intv):
+                for _ in range(n_intv):
                     o, = s8.unpack_from(data, off); off += s8.size
                     intvs.append(o)
                 if n_intv == 0:
@@ -179,7 +180,7 @@ class BAMIndex(object):
             self.chrs = chrs
 
     def save(self, idxf):
-        with open(idxf, 'w') as fp:
+        with open(idxf, 'wb') as fp:
             s4 = struct.Struct('<I')
             s8 = struct.Struct('<Q')
             fp.write(s4.pack(self.MAGIC))
@@ -200,7 +201,7 @@ class BAMIndex(object):
     def query(self, tid, s, e):
         ranges = []
         if tid < 0:
-            ranges.append((self.maxoff, sys.maxint))
+            ranges.append((self.maxoff, sys.maxsize))
             return ranges
         if tid >= len(self.chrs):
             return ranges
@@ -208,10 +209,10 @@ class BAMIndex(object):
         i = s >> self.SHIFTS[0]
         minoff = i >= len(ci[1]) and ci[1][-1] or ci[1][i]
         for shift in reversed(self.SHIFTS):
-            bo = ((1 << 29-shift) - 1) / 7
+            bo = ((1 << 29-shift) - 1) // 7
             bs = bo + (s >> shift)
             be = bo + (e-1 >> shift)
-            for bi in xrange(bs, be+1):
+            for bi in range(bs, be+1):
                 if bi not in ci[0]:
                     continue
                 for chunk in ci[0][bi]:
@@ -220,25 +221,25 @@ class BAMIndex(object):
         return ranges
 
     def dump(self):
-        print 'minoff', self.minoff, 'maxoff', self.maxoff
+        print('minoff', self.minoff, 'maxoff', self.maxoff)
         for tid, (bins, intvs) in enumerate(self.chrs):
             if len(bins) == 0:
                 continue
-            print 'tid', tid
-            print json.dumps((bins, intvs), indent=4)
+            print('tid', tid)
+            print(json.dumps((bins, intvs), indent=4))
 
     def density(self):
         density = []
         for bins, intvs in self.chrs:
             dens = [0] * len(intvs)
             minoff, maxoff = (1<<63)-1, 0
-            for bin, chunks in bins.iteritems():
+            for bin, chunks in bins.items():
                 minoff = min(minoff, chunks[0][0]>>16)
                 maxoff = max(maxoff, chunks[-1][1]>>16)
                 size = sum([(e>>16) - (s>>16) for s, e in chunks])
                 bi, bs = 0, 0
                 for shift in self.SHIFTS:
-                    bo = ((1 << 29-shift) - 1) / 7
+                    bo = ((1 << 29-shift) - 1) // 7
                     if bin >= bo and bin <= bo * 8:
                         bs = 1 << shift-14
                         bi = (bin - bo) * bs
@@ -249,7 +250,7 @@ class BAMIndex(object):
                     continue
                 if len(dens) < bi + bs:
                     bs = len(dens) - bi
-                for i in xrange(bs):
+                for i in range(bs):
                     dens[bi + i] += size / bs
             size = max(maxoff - minoff, 0)
             density.append((size, dens))
@@ -277,7 +278,7 @@ class BGZF(object):
     def read(self, size):
         if size is None:
             raise ValueError
-        data = ''
+        data = b''
         blk = self.pos >> 16
         off = self.pos & 65535
         while size > 0:
@@ -300,7 +301,7 @@ class BGZF(object):
     def read_block(self, offset):
         self.fp.seek(offset)
         header = self.fp.read(18)
-        length = (ord(header[16]) | ord(header[17]) << 8) + 1
+        length = (header[16] | header[17] << 8) + 1
         block = self.fp.read(length-18)
         zs = zlib.decompressobj(-15)
         self.block = zs.decompress(block[:-8]) + zs.flush()
@@ -335,22 +336,22 @@ class BAMHeader(object):
     def load(self, bamf):
         bgzf = BGZF(s3open(bamf))
         d = bgzf.read(4)
-        if d != 'BAM\001':
+        if d != b'BAM\001':
             raise RuntimeError('Not a bam file')
         d = bgzf.read(4)
-        n = ord(d[0]) | ord(d[1]) << 8 | ord(d[2]) << 16 | ord(d[3]) << 24
-        self.texts = bgzf.read(n)
+        n = d[0] | d[1] << 8 | d[2] << 16 | d[3] << 24
+        self.texts = bgzf.read(n).decode('utf-8')
         d = bgzf.read(4)
-        n = ord(d[0]) | ord(d[1]) << 8 | ord(d[2]) << 16 | ord(d[3]) << 24
+        n = d[0] | d[1] << 8 | d[2] << 16 | d[3] << 24
         chrs = []
         tids = {}
-        for tid in xrange(n):
+        for tid in range(n):
             d = bgzf.read(4)
-            n = ord(d[0]) | ord(d[1]) << 8 | ord(d[2]) << 16 | ord(d[3]) << 24
+            n = d[0] | d[1] << 8 | d[2] << 16 | d[3] << 24
             d = bgzf.read(n)
-            name = d[:-1]
+            name = d[:-1].decode('utf-8')
             d = bgzf.read(4)
-            n = ord(d[0]) | ord(d[1]) << 8 | ord(d[2]) << 16 | ord(d[3]) << 24
+            n = d[0] | d[1] << 8 | d[2] << 16 | d[3] << 24
             chrs.append((name, n))
             tids[name] = tid
         bgzf.close()
@@ -358,14 +359,13 @@ class BAMHeader(object):
         self.tids = tids
 
     def load_text(self, hdrf):
-        fp = s3open(hdrf)
-        chrs = []
-        for line in fp:
-            flds = line.rstrip('\r\n').split('\t')
-            if flds[0] == '@SQ':
-                attr = dict(f.split(':',1) for f in flds[1:])
-                chrs.append((attr['SN'], int(attr['LN'])))
-        fp.close()
+        with open(hdrf, 'r') as fp:
+            chrs = []
+            for line in fp:
+                flds = line.rstrip('\r\n').split('\t')
+                if flds[0] == '@SQ':
+                    attr = dict(f.split(':',1) for f in flds[1:])
+                    chrs.append((attr['SN'], int(attr['LN'])))
         self.chrs = chrs
         self.tids = dict((c[0], i) for i,c in enumerate(chrs))
 
@@ -405,7 +405,7 @@ def main():
             d = density.setdefault(tchr,[])
             if len(d) < len(dens):
                 d.extend([0] * (len(dens)-len(d)))
-            for i in xrange(len(dens)):
+            for i in range(len(dens)):
                 d[i] += dens[i]
             chroms[tchr] = max(chroms.get(tchr,0), tlen)
     chr_tid = dict((chr[0],i) for i, chr in enumerate(hdr.chrs))
@@ -418,35 +418,35 @@ def main():
     if len(args.shard) > 0:
         shards = map(parse_shard, args.shard)
     else:
-        shards = [([(c,0,n)], c) for c,n in chroms.iteritems()]
+        shards = [([(c,0,n)], c) for c,n in chroms.items()]
     try:
         shards.sort(key=lambda shard: chr_tid[shard[1]])
     except KeyError:
         shards.sort(key=lambda shard: shard[1])
-    nmax = [(0,None,0)] * args.densest
+    nmax = [(0,'',0)] * args.densest
     for shard, name in shards:
         dmax = [0] * nthr
         for c,s,e in shard:
             if c not in density:
                 continue
-            for f in xrange(s, e, fraglen):
-                i = f / 16384
-                j = (f + fraglen + 16383) / 16384
-                for k in xrange(i,j):
+            for f in range(s, e, fraglen):
+                i = f // 16384
+                j = (f + fraglen + 16383) // 16384
+                for k in range(i,j):
                     if k >= len(density[c]):
                         break
                     d = density[c][k]
                     heapq.heappushpop(dmax, d)
                     heapq.heappushpop(nmax, (d,c,k*16384))
         d = sum(dmax) * multiplier / (1024*1024*1024)
-        print '%s\t%f' % (name, d)
+        print('%s\t%f' % (name, d))
 
     if args.densest > 0:
-        print '\nThe densest %d fragments:' % args.densest
+        print('\nThe densest %d fragments:' % args.densest)
         for d,c,s in heapq.nlargest(args.densest, nmax):
             if c is None: continue
             frag = '%s:%d-%d' % (c, s+1, s+16384)
-            print '%-32s%f' % (frag, d/(1024*1024*1024.))
+            print('%-32s%f' % (frag, d/(1024*1024*1024.)))
 
 if __name__ == '__main__':
     sys.exit(main())
