@@ -158,6 +158,7 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT \
 $SENTIEON_INSTALL_DIR/bin/sentieon pyexec $TNSCOPE_FILTER \
     -v output_tnscope.pre_filter.vcf.gz \
     --tumor_sample $TUMOR_SM \
+    --normal_sample $NORMAL_SM \
     -x tissue_panel --min_tumor_af 0.0095 --min_depth 200 \
     output_tnscope.filter.vcf.gz || \
     { echo "TNscope filter failed"; exit 1; }
