@@ -87,7 +87,6 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam 
     --min_init_tumor_lod 1.0 \
     --assemble_mode 4 \
     --pcr_indel_model NONE \
-    --min_base_qual 40 \
     --resample_depth 100000 \
     output_tnscope.pre_filter.vcf.gz || \
     { echo "TNscope failed"; exit 1; }
