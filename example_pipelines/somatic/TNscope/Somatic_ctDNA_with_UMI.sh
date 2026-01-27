@@ -29,9 +29,9 @@ TNSCOPE_FILTER=/home/sentieon-scripts/tnscope_filter/tnscope_filter.py
 export SENTIEON_LICENSE=/home/Licenses/Sentieon.lic #or using licsrvr: c1n11.sentieon.com:5443
 
 #UMI information
-READ_STRUCTURE="12M11S+T,+T" #an example duplex: "3M2S+T,3M2S+T" where duplex UMI extraction requires an identical read structure for both strands
-DUPLEX_UMI="false" #set to "true" if duplex
-UMI_ECC_DIST=1 #UMI barcode error correction distance. Set it to 0 to turn off the barcode error correction. The default value is 1.
+READ_STRUCTURE="3M2S+T,3M2S+T" #an example duplex: "3M2S+T,3M2S+T" where duplex UMI extraction requires an identical read structure for both strands
+DUPLEX_UMI="true" #set to "false" if not duplex
+UMI_ECC_DIST=0 #UMI barcode error correction distance. Set it to 0 to turn off the barcode error correction. The default value is 1.
 
 # Other settings
 NT=$(nproc) #number of threads to use in computation, set to number of cores in the server
