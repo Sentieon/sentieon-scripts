@@ -31,6 +31,7 @@ export SENTIEON_LICENSE=/home/Licenses/Sentieon.lic #or using licsrvr: c1n11.sen
 #UMI information
 READ_STRUCTURE="12M11S+T,+T" #an example duplex: "3M2S+T,3M2S+T" where duplex UMI extraction requires an identical read structure for both strands
 DUPLEX_UMI="false" #set to "true" if duplex
+UMI_ECC_DIST=1 #UMI barcode error correction distance. Set it to 0 to turn off the barcode error correction. The default value is 1.
 
 # Other settings
 NT=$(nproc) #number of threads to use in computation, set to number of cores in the server
@@ -67,7 +68,7 @@ fi
 # duplicates by adding the --rmdup option in Dedup
 # ******************************************
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam --algo LocusCollector \
-    --consensus --umi_tag XR --fun score_info tumor_score.txt || { echo "LocusCollector failed"; exit 1; }
+    --consensus --umi_tag XR --fun score_info --umi_ecc_dist $UMI_ECC_DIST tumor_score.txt || { echo "LocusCollector failed"; exit 1; }
 
 $SENTIEON_INSTALL_DIR/bin/sentieon driver -t $NT -i tumor_sorted.bam -r $FASTA --algo Dedup \
     --score_info tumor_score.txt --metrics umi.dedup_metrics.txt tumor_deduped.bam || \
@@ -82,7 +83,8 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam 
     --tumor_sample $TUMOR_SM \
     --dbsnp $KNOWN_DBSNP \
     --disable_detector sv \
-    --min_tumor_allele_frac 3e-3 \
+    --trim_soft_clip \
+    --min_tumor_allele_frac 0.0005 \
     --min_tumor_lod 3.0 \
     --min_init_tumor_lod 1.0 \
     --assemble_mode 4 \
@@ -97,6 +99,6 @@ $SENTIEON_INSTALL_DIR/bin/sentieon driver -r $FASTA -t $NT -i tumor_deduped.bam 
 $SENTIEON_INSTALL_DIR/bin/sentieon pyexec $TNSCOPE_FILTER \
     -v output_tnscope.pre_filter.vcf.gz \
     --tumor_sample $TUMOR_SM \
-    -x ctdna --min_tumor_af 0.001 --min_depth 1000 \
+    -x ctdna_umi --min_tumor_af 0.001 --min_depth 1000 \
     output_tnscope.filter.vcf.gz || \
     { echo "TNscope filter failed"; exit 1; }
