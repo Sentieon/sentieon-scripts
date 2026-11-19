@@ -15,13 +15,14 @@ The panel inputs are create_pon.py's; each --pon is a --tsv table the builder wr
 checks read the first table (male and female tables share their autosomal rows), the chrX/chrY counts every table.
 Transform and estimators are the builder's: log2(DP + 1e-6), column medians (mean of the two middle values),
 sigma2 = (1.4826 MAD)^2.
---prior is the prior .vcf.gz, or a model bundle (an ar archive) holding it as cnvprior.vcf.gz, else cnv.pop.vcf.gz;
-the bundle's member is copied to a temp file ($TMPDIR), read and removed. PREFIX.json records the file and member
-read and the md5 of the VCF bytes ("prior").
+--prior is the prior .vcf.gz, or BUNDLE/MEMBER, a member of a model bundle (an ar archive), e.g.
+CNV_WES.bundle/cnvprior.vcf.gz; the member is copied to a temp file ($TMPDIR), read and removed (no .tbi needed).
+PREFIX.json records the path, the member and the md5 of the VCF bytes ("prior").
 
 Checks (thresholds in T, calibrated in ponsize/analysis/qc/ by pon_qc_calib.py)
   0 verification   this script's full-panel median and sigma2 against the stored ones (valid autosomal probes)
-  1 composition    N, sexes, empty members, --min_samples against min(20, floor(n_smaller_sex/2)), chrX/chrY counts
+  1 composition    N, sexes, empty members, chrX/chrY counts, --min_samples against the builder's auto rule
+                   min(20, max(3, floor(n_smaller_sex/2))): members with probes; a sex with none does not count
   2 precision      per-probe SE of the panel median: bootstrap over members (B=200) and 1.2533 sigma / sqrt(n);
                    status on the median of SE/sigma (1.2533/sqrt(N) for a clean panel)
   3 unstable loci  probes with bootstrap SE > 0.2, or with >= 10% of members deviating on one side, merged into
@@ -33,7 +34,8 @@ Checks (thresholds in T, calibrated in ponsize/analysis/qc/ by pon_qc_calib.py)
                    reject (does not match the panel), review (a member flag would fire) or admit
   8 compare        --compare: the stored medians and sigma2 of this PoN against a previous version
 Verdicts: autosomes (N, relative SE, empty members, --min_samples, member mismatch/outliers, batch); chrX/chrY of the
-male PoN and chrX of the female PoN (members of that sex with probes, its chrX_ref, --min_samples, sex flags).
+male PoN and chrX of the female PoN (members of that sex with probes, its chrX_ref, --min_samples, sex flags); na for
+a sex with no members with probes when no table of that sex is given.
 Noise, burden, PCA and unstable flags use the valid autosomal probes CNVscope does not mask (panel median DP >=
 #capture_floor, 0.1); at this setting the test noise equals CNVscope's measured noise.
 Writes PREFIX.report.tsv, PREFIX.members.tsv, PREFIX.unstable.bed, PREFIX.tests.tsv (--test), PREFIX.admit.tsv and
@@ -198,7 +200,6 @@ def read_pon_tsv(path):
 
 
 AR_MAGIC = b'!<arch>\n'
-PRIOR_MEMBERS = ('cnvprior.vcf.gz', 'cnv.pop.vcf.gz')   # the prior in a model bundle: the first member present
 
 
 def ar_members(path):
@@ -236,33 +237,56 @@ def ar_members(path):
     return m
 
 
+def prior_member(path):
+    """(bundle, member) of a prior given as BUNDLE/MEMBER, split at the last /, where BUNDLE is a model bundle (an ar
+    archive, told by its first 8 bytes) holding MEMBER; (None, None) for a plain file. Reads archive headers only.
+    Raises ValueError for a bare bundle (or BUNDLE/), naming its .vcf.gz members, for a missing member, and for a path
+    that is neither, as prior/cnvprior.lua does (which also needs MEMBER.tbi)."""
+    try:
+        with open(path, 'rb') as f:
+            if f.read(8) != AR_MAGIC:
+                return None, None
+        bundle, member = path, ''
+    except OSError as e:
+        bundle, _, member = path.rpartition('/')
+        try:
+            with open(bundle, 'rb') as f:
+                ok = f.read(8) == AR_MAGIC
+        except OSError:
+            ok = False
+        if not ok:
+            raise ValueError(f'cannot open the prior {path}: {e.strerror}') from None
+    m = ar_members(bundle)
+    if not member:
+        v = sorted(n for n in m if n.endswith('.vcf.gz'))
+        raise ValueError(f'{bundle} is a model bundle: give the prior VCF in it as {bundle}/<member>; ' +
+                         (f'its .vcf.gz members: {", ".join(v)}' if v else 'it holds no .vcf.gz member'))
+    if member not in m:
+        raise ValueError(f'model bundle {bundle} has no member {member}')
+    return bundle, member
+
+
 def read_prior(path, source=None):
-    """Prior segments per contig: start0, end, AN, DEL_AF, DUP_AF (sorted by start). path is the prior .vcf.gz or a
-    model bundle (an ar archive, told by its first 8 bytes) holding it as the member cnvprior.vcf.gz, else
-    cnv.pop.vcf.gz; the member is copied to a temp file (tempfile, so $TMPDIR), read and removed, also on error.
-    A dict source receives the path, the member read (None for a plain file) and the md5 of the VCF bytes."""
-    with open(path, 'rb') as f:
-        bundle = f.read(8) == AR_MAGIC
-    member, h = None, hashlib.md5()
-    if not bundle:
+    """Prior segments per contig: start0, end, AN, DEL_AF, DUP_AF (sorted by start). path is the prior .vcf.gz or
+    BUNDLE/MEMBER (prior_member); a member is copied to a temp file (tempfile, so $TMPDIR), read and removed, also on
+    error. A dict source receives the path, the member read (None for a plain file) and the md5 of the VCF bytes."""
+    bundle, member = prior_member(path)
+    h = hashlib.md5()
+    if bundle is None:
         with open(path, 'rb') as f:
             for b in iter(lambda: f.read(1 << 20), b''):
                 h.update(b)
         out = _read_prior_vcf(path)
     else:
-        m = ar_members(path)
-        member = next((n for n in PRIOR_MEMBERS if n in m), None)
-        if member is None:
-            raise ValueError(f'model bundle {path} has no member ' + ' and no member '.join(PRIOR_MEMBERS))
-        off, left = m[member]
+        off, left = ar_members(bundle)[member]
         fd, tmp = tempfile.mkstemp(prefix='pon_qc.', suffix='.' + member)
         try:
-            with os.fdopen(fd, 'wb') as o, open(path, 'rb') as f:
+            with os.fdopen(fd, 'wb') as o, open(bundle, 'rb') as f:
                 f.seek(off)
                 while left:
                     b = f.read(min(left, 1 << 20))
                     if not b:
-                        raise ValueError(f'{path}: short read of member {member}')
+                        raise ValueError(f'{bundle}: short read of member {member}')
                     h.update(b)
                     o.write(b)
                     left -= len(b)
@@ -659,13 +683,14 @@ def run_qc(paths, sexes, tables, store, par, min_samples=None, prior=None, B=200
     sig = np.sqrt(np.maximum(mad_sigma2(LT.T, nv)[0], 0)) if not verify else np.sqrt(A['sigma2_dp'].values)
     log(f'  matrix {N} x {P}, sorted ({time.time() - t0:.0f}s)')
 
-    # 1 composition
-    rule = min(20, min(nM, nF) // 2)
+    # 1 composition; the rule is the builder's --min_samples auto (a sex without members with probes does not count)
+    nMp, nFp = int(((sexes == 'M') & ~empty).sum()), int(((sexes == 'F') & ~empty).sum())
+    rule = min(20, max(3, min([n for n in (nMp, nFp) if n] or [0]) // 2))
     lo_ms = int(A['n_valid'].min()) if P else 0
     ex_auto = (df['excluded'].values == 1) & np.isin(contig, list(AUTO)) & (df['panel_median_dp'].values >= 0.05)
     hi_ms = int(df['n_valid'].values[ex_auto].max()) + 1 if ex_auto.any() else 1
     comp = {'n': N, 'n_M': nM, 'n_F': nF, 'empty': [names[i] for i in np.flatnonzero(empty)],
-            'n_M_with_probes': int(((sexes == 'M') & ~empty).sum()), 'n_F_with_probes': int(((sexes == 'F') & ~empty).sum()),
+            'n_M_with_probes': nMp, 'n_F_with_probes': nFp,
             'hdr_n_samples': tables[0]['hdr'].get('n_samples'), 'min_samples': min_samples,
             'min_samples_rule': rule, 'min_samples_inferred': [hi_ms, lo_ms], 'tables': []}
     for tb in tables:
@@ -1103,6 +1128,7 @@ def panel_status(res, t):
         st['batch_pc1'] = status(b['pc1_struct'], t['pc1_warn'], t['pc1_fail'])
         st['batch_sil'] = status(b['sil'], t['sil_warn'], t['sil_fail'])
     sexflag = m.get('sex_flagged', {})
+    absent = set()
     for sx, lab in (('M', 'male'), ('F', 'female')):
         n = c.get(f'n_{sx}_with_probes', c[f'n_{sx}'])
         st[f'n_{lab}'] = 'pass' if n >= t['sex_pass'] else 'warn'
@@ -1113,12 +1139,17 @@ def panel_status(res, t):
         for tb in c['tables']:
             if tb['ratio_sex'] == sx:
                 st[f'chrX_ref_{lab}'] = 'fail' if tb['chrX_ref'] == 0 else 'pass'
+        if n == 0 and st[f'chrX_ref_{lab}'] == 'na':    # no members with probes and no table of this sex
+            absent.add(lab)
+            st[f'n_{lab}'] = st[f'members_sex_{lab}'] = 'na'
     order = {'pass': 0, 'na': 0, 'warn': 1, 'fail': 2}
     worst = lambda ks: max((st[k] for k in ks if k in st), key=lambda v: order[v])
     st['autosomes'] = worst(['n', 'empty', 'min_samples', 'rel_se', 'members_mismatch', 'members_outliers',
                              'batch_pc1', 'batch_sil'])
-    st['chrXY_male'] = worst(['n_male', 'chrX_ref_male', 'min_samples', 'members_sex_male'])
-    st['chrX_female'] = worst(['n_female', 'chrX_ref_female', 'min_samples', 'members_sex_female'])
+    st['chrXY_male'] = 'na' if 'male' in absent else worst(['n_male', 'chrX_ref_male', 'min_samples',
+                                                            'members_sex_male'])
+    st['chrX_female'] = 'na' if 'female' in absent else worst(['n_female', 'chrX_ref_female', 'min_samples',
+                                                                'members_sex_female'])
     return st
 
 
@@ -1142,7 +1173,10 @@ def report_rows(res, t):
     for sx, lab, basis in (('M', 'male', 'autosomal tiers by analogy, not measured'),
                            ('F', 'female', 'measured down to 10 females: no trend, wide intervals')):
         n = c.get(f'n_{sx}_with_probes', c[f'n_{sx}'])
-        if st[f'n_{lab}'] == 'fail':
+        if st[f'n_{lab}'] == 'na':
+            note = (f'no {lab} members with probes: a {lab} PoN would have no '
+                    f'chrX{"/chrY" if sx == "M" else ""} reference')
+        elif st[f'n_{lab}'] == 'fail':
             note = f'fewer than --min_samples {c["min_samples"]}: the {lab} PoN keeps no chrX/chrY probe'
         elif n >= t['sex_pass']:
             note = ''
@@ -1154,8 +1188,9 @@ def report_rows(res, t):
         add('1_composition', f'n_{sx} ({lab} PoN chrX{"/chrY" if sx == "M" else ""})', n,
             f">= {t['sex_pass']} pass, else warn ({basis})", st[f'n_{lab}'], note)
     add('1_composition', 'empty_members', len(c['empty']), '0', st['empty'], ','.join(c['empty']))
-    add('1_composition', 'min_samples', c['min_samples'], f"= min(20, floor(n_smaller_sex/2)) = {c['min_samples_rule']}",
-        st['min_samples'], f"table implies {c['min_samples_inferred'][0]}..{c['min_samples_inferred'][1]}")
+    add('1_composition', 'min_samples', c['min_samples'],
+        f"= min(20, max(3, floor(n_smaller_sex/2))) = {c['min_samples_rule']}", st['min_samples'],
+        f"table implies {c['min_samples_inferred'][0]}..{c['min_samples_inferred'][1]}")
     for tb in c['tables']:
         lab = {'M': 'male', 'F': 'female'}.get(tb['ratio_sex'])
         add('1_composition', f"chrX_ref/dark [{tb['ratio_sex'] or '-'}]", f"{tb['chrX_ref']}/{tb['chrX_dark']}",
@@ -1319,18 +1354,21 @@ def run_build_qc(input_list, sample_sex, par_bed, pon_tsv_paths, min_samples, pr
     """QC of a freshly built PoN, for create_pon.py to call after it writes the PoN.
 
     input_list, sample_sex, par_bed and min_samples are the builder's inputs; pon_tsv_paths are the --tsv tables it
-    wrote (male and/or female); prior is the population CNV prior VCF, a model bundle holding it (read_prior), or
-    None (no prior AF annotation), and the JSON's "prior" records the file, member and md5 read; boot is the
+    wrote (male and/or female); prior is the population CNV prior VCF or BUNDLE/MEMBER of a model bundle (read_prior),
+    or None (no prior AF annotation), and the JSON's "prior" records the path, member and md5 read; boot is the
     number of bootstrap draws; jobs the processes reading the .norm files. Optional: tests and admit (raw .norm paths),
     admit_sex ({path: 'M'|'F'}), compare (previous .pon.tsv paths). Writes out_prefix.report.tsv, .members.tsv,
     .unstable.bed, .json and .txt (and .tests.tsv, .admit.tsv, .admit_runs.tsv, .compare.tsv, .compare.bed when asked)
     and nothing else; logs to stderr only with verbose. Returns the status dict: one status per check and the verdicts
-    'autosomes', 'chrXY_male' and 'chrX_female' (pass, warn or fail). Importers set sys.dont_write_bytecode = True
+    'autosomes', 'chrXY_male' and 'chrX_female' (pass, warn or fail; a sex verdict is na when the panel has no members
+    of that sex with probes and no table of that sex is given). Importers set sys.dont_write_bytecode = True
     before `import pon_qc` (or run python -B): the guard in this module cannot stop its own .pyc.
     """
     global VERBOSE
     old_v, VERBOSE = VERBOSE, verbose
     try:
+        if prior:
+            prior_member(prior)  # a bad prior fails here, before any table or .norm is read
         with warnings.catch_warnings(), np.errstate(all='ignore'):
             warnings.simplefilter('ignore', RuntimeWarning)
             tables = [read_pon_tsv(p) for p in pon_tsv_paths]
@@ -1353,7 +1391,7 @@ def run_build_qc(input_list, sample_sex, par_bed, pon_tsv_paths, min_samples, pr
             src = {}
             pr = read_prior(prior, src) if prior else None
             if prior:
-                log(f"prior {src['path']}" + (f" member {src['member']}" if src['member'] else '') + f", md5 {src['md5']}")
+                log(f"prior {src['path']}, md5 {src['md5']}")
             out = run_qc(paths, [sx[p] for p in paths], tables, store, read_bed(par_bed), min_samples=min_samples,
                          prior=pr, B=boot, seed=seed, n_pca=pca_probes, tests=tests,
                          admits=admit, admit_sex=admit_sex or {})
@@ -1377,8 +1415,8 @@ def main():
     ap.add_argument('--pon', required=True, nargs='+', help='.pon.tsv table(s) built from this panel')
     ap.add_argument('--out', required=True, help='output prefix')
     ap.add_argument('--min_samples', type=int, default=None, help='the --min_samples the PoN was built with')
-    ap.add_argument('--prior', default=None, help='population CNV prior VCF (INFO END, AN, DEL_AC, DUP_AC), or a model '
-                    'bundle holding it as cnvprior.vcf.gz (else cnv.pop.vcf.gz)')
+    ap.add_argument('--prior', default=None, help='population CNV prior VCF (INFO END, AN, DEL_AC, DUP_AC), or '
+                    'BUNDLE/MEMBER, a VCF member of a model bundle, e.g. CNV_WES.bundle/cnvprior.vcf.gz')
     ap.add_argument('--test', nargs='*', default=[], help='raw .norm files of samples to check against the panel')
     ap.add_argument('--admit', nargs='*', default=[], help='raw .norm files of called samples to check for the pool')
     ap.add_argument('--admit_sex', nargs='*', default=[], help='M/F per --admit sample, or a path<TAB>M|F file')

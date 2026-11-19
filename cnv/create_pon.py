@@ -159,6 +159,8 @@ def _fast_col_median(mat, n_valid_per_col):
     median position — fully vectorized, no Python loop.
     """
     n_rows, n_cols = mat.shape
+    if n_rows == 0:  # no samples (a sex absent from the panel): every median is NaN
+        return np.full(n_cols, np.nan)
     mt = np.ascontiguousarray(mat.T)
     mt.sort(axis=1)  # NaN sorts to end; each row now has valid values first
     nv = n_valid_per_col
@@ -215,7 +217,7 @@ def main():
         default="auto",
         help="Min valid samples per probe (on chrX/chrY with --ratio_sex: of the PoN's sex). 'auto' (default): "
         "min(20, max(3, floor(n_smaller_sex / 2))) with --sample_sex, else min(20, max(3, floor(N / 4))), counting "
-        "only members with probes. --legacy needs a number",
+        "only members with probes (a sex with none does not count). --legacy needs a number",
     )
     parser.add_argument(
         "--min_median_dp", type=float, default=0.05, help="Min median DP to keep probe"
@@ -274,8 +276,9 @@ def main():
     parser.add_argument("--no_qc", dest="qc", action="store_false", help="Do not run the QC report")
     parser.add_argument(
         "--qc_prior", default=None,
-        help="Population CNV prior VCF for the QC's common-locus annotation, e.g. prior/cnvprior.hprc178.vcf.gz, or a "
-        "model bundle holding it as cnvprior.vcf.gz (else cnv.pop.vcf.gz), e.g. model/CNV_WES.bundle (default: none)",
+        help="Population CNV prior VCF for the QC's common-locus annotation, e.g. prior/cnvprior.hprc178.vcf.gz, or "
+        "BUNDLE/MEMBER, a VCF member of a model bundle, e.g. model/CNV_WES.bundle/cnvprior.vcf.gz; checked at start-up "
+        "unless --no_qc (default: none)",
     )
     parser.add_argument(
         "--qc_jobs", type=int, default=None, help="Processes the QC uses to read the .norm files (default 1)"
@@ -310,6 +313,21 @@ def main():
         builder_md5 = _md5_file(os.path.realpath(__file__))
         option_string = _option_string(parser, args)
         logger.info("create_pon.py version %d (md5 %s): %s", BUILDER_VERSION, builder_md5, option_string)
+        if args.qc_prior and args.qc:  # its form, before any panel file is read: archive headers only, no VCF parse
+            here = os.path.dirname(os.path.realpath(__file__))
+            sys.dont_write_bytecode = True  # before the import: pon_qc's own guard cannot stop its .pyc
+            if here not in sys.path:
+                sys.path.insert(0, here)
+            try:
+                import pon_qc
+            except ImportError:  # no pon_qc.py: the QC fails after the build and says so
+                pass
+            else:
+                try:
+                    pon_qc.prior_member(args.qc_prior)
+                except (ValueError, OSError) as e:
+                    logger.error("--qc_prior: %s", e)
+                    sys.exit(1)
 
     if args.sample_sex and not args.par_bed:
         logger.error("--sample_sex requires --par_bed")
@@ -366,7 +384,11 @@ def main():
             sample_sex_arr.append(sex)
         n_males = sum(1 for s in sample_sex_arr if s == "M")
         n_females = sum(1 for s in sample_sex_arr if s == "F")
-        if n_males < 3 or n_females < 3:
+        if not n_males or not n_females:
+            sx = "F" if n_males else "M"
+            logger.warning("No %s members in the panel: a --ratio_sex %s PoN from it would have no chrX%s reference",
+                           sx, sx, "/chrY" if sx == "M" else "")
+        elif n_males < 3 or n_females < 3:
             logger.warning("Low sample count per sex: %d males, %d females (recommend >=3 each)",
                            n_males, n_females)
 
@@ -443,10 +465,12 @@ def main():
             min_samples = args.min_samples
             min_samples_rule = "given"
         elif sample_sex_arr:
-            n_small = min(n_males_p, n_females_p)
+            n_small = min(n for n in (n_males_p, n_females_p) if n)  # a sex without members with probes does not count
             min_samples = min(20, max(3, n_small // 2))
-            min_samples_rule = (f"auto: min(20, max(3, floor({n_small} / 2))), {n_small} = members of the smaller "
-                                f"sex with probes ({n_males_p} M, {n_females_p} F)")
+            who = ("members of the smaller sex with probes" if n_males_p and n_females_p else
+                   f"{'M' if n_males_p else 'F'} members with probes, the only sex with any")
+            min_samples_rule = (f"auto: min(20, max(3, floor({n_small} / 2))), {n_small} = {who} ({n_males_p} M, "
+                                f"{n_females_p} F)")
         else:
             min_samples = min(20, max(3, n_with // 4))
             min_samples_rule = f"auto: min(20, max(3, floor({n_with} / 4))), {n_with} = members with probes"
@@ -644,8 +668,9 @@ def main():
     par_flag = np.zeros(n_probes, dtype=np.uint8)
 
     if sample_sex_arr:
-        male_idx = np.array([i for i, s in enumerate(sample_sex_arr) if s == "M"])
-        female_idx = np.array([i for i, s in enumerate(sample_sex_arr) if s == "F"])
+        # integer even when empty: an absent sex selects no rows and keeps NaN medians and 0 sigma2
+        male_idx = np.array([i for i, s in enumerate(sample_sex_arr) if s == "M"], dtype=np.intp)
+        female_idx = np.array([i for i, s in enumerate(sample_sex_arr) if s == "F"], dtype=np.intp)
 
         # Identify sex chromosome probes
         sex_chroms = {"chrX", "X", "chrY", "Y"}
@@ -716,15 +741,14 @@ def main():
                     continue
                 nonpar = cmask & (par_flag[sex_indices] == 0)
                 if np.any(nonpar):
-                    logger.info(
-                        "  %s non-PAR: male median=%.4f (sigma2=%.4f), female median=%.4f (sigma2=%.4f), mixed sigma2=%.4f",
-                        label,
-                        np.nanmedian(med_male[nonpar]),
-                        np.nanmedian(s2_male[nonpar]),
-                        np.nanmedian(med_female[nonpar]),
-                        np.nanmedian(s2_female[nonpar]),
-                        np.median(sigma2_dp_full[sex_indices[nonpar]]),
-                    )
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", RuntimeWarning)  # All-NaN where a sex has no probes
+                        sx_parts = [f"no {lab} members" if not len(ix) else "%s median=%.4f (sigma2=%.4f)" % (
+                            lab, np.nanmedian(med[nonpar]), np.nanmedian(s2[nonpar]))
+                            for lab, ix, med, s2 in (("male", male_idx, med_male, s2_male),
+                                                     ("female", female_idx, med_female, s2_female))]
+                    logger.info("  %s non-PAR: %s, %s, mixed sigma2=%.4f", label, *sx_parts,
+                                np.median(sigma2_dp_full[sex_indices[nonpar]]))
             del dp_sex_male, dp_sex_female, log2_male, log2_female
 
     # svd_idx: -1 = excluded (dark probe), -2 = non-autosomal, >=0 = valid autosomal
