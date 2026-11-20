@@ -6,6 +6,7 @@ Helper scripts for biological data processing from Sentieon
 - [**Memest**](/memest) - Memory usage estimation for Sentieon variant callers from a BAM header and index (.bai) files.
 - [**MNP**](/merge_mnp) - Merge neighboring variants along the same haplotype from Sentieon somatic variant callers into multi-nucleotide polymorphisms (MNPs).
 - [**TNscope Filter**](/tnscope_filter) - TNscope filter implemented in python script.
+- [**CNV**](/cnv) - CNV scripts including evaluating calls against assembly-derived truth for WGS and WES, creating and maintaining Panel of Normals (PoN) for WES.
 
 ## License
 Unless otherwise indicated, files in this repository are licensed under a BSD 2-Clause License.
