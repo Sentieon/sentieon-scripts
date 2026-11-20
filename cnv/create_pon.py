@@ -10,12 +10,12 @@ cnvscope --pon_mode ratio).
 
 Outputs:
   <prefix>       — binary PoN file (CNVPON v1: per-probe table + optional V_k matrices)
-  <prefix>.tsv   — per-probe table (human-readable, with --tsv), plus per-probe
-                   capture stats at --capture_floor (TSV only, not in the binary)
+  <prefix>.tsv   — with --tsv only: the per-probe table as text, plus per-probe capture stats at
+                   --capture_floor; for people to read, no tool reads it
   <prefix>.json  — provenance sidecar (not with --legacy)
   <prefix>.qc.{report.tsv,members.tsv,unstable.bed,json,txt}
-                 — QC report of pon_qc.py (next to this file) on the PoN just written (--qc, the default, with --tsv
-                   and --sample_sex; not with --legacy)
+                 — QC report of pon_qc.py (next to this file) on the binary PoN just written and the members
+                   (--qc, the default, with --sample_sex; not with --legacy)
 
 Builder version 2. Against version 1 (md5 27d01655, which --legacy reproduces byte for byte):
   - the probe index is the union of all members' probes, and the PoN does not depend on member order;
@@ -74,10 +74,10 @@ def _write_json(path, obj):
         f.write("\n")
 
 
-def _build_qc(args, tsv_fname, min_samples, has_sex):
+def _build_qc(args, min_samples, has_sex):
     """pon_qc.run_build_qc on the PoN just written; returns its record for the .json sidecar. Never fails the build."""
-    if tsv_fname is None or not has_sex:
-        why = "needs --tsv" if tsv_fname is None else "needs --sample_sex and --par_bed"
+    if not has_sex:
+        why = "needs --sample_sex and --par_bed"
         logger.warning("QC skipped: the QC report %s", why)
         return {"status": f"skipped: {why}"}
     here = os.path.dirname(os.path.realpath(__file__))
@@ -92,10 +92,10 @@ def _build_qc(args, tsv_fname, min_samples, has_sex):
             sys.path.insert(0, here)
         import pon_qc
         logger.info("QC: pon_qc.py (md5 %s) on %s, prior %s, %d bootstrap draws, %d jobs", rec["pon_qc_md5"],
-                    tsv_fname, args.qc_prior or "none", rec["boot"], rec["jobs"])
-        st = pon_qc.run_build_qc(args.input_list, args.sample_sex, args.par_bed, [tsv_fname], min_samples,
-                                 prior=args.qc_prior, out_prefix=prefix, boot=rec["boot"], jobs=rec["jobs"],
-                                 verbose=args.verbose)
+                    args.output, args.qc_prior or "none", rec["boot"], rec["jobs"])
+        st = pon_qc.run_build_qc(args.input_list, args.sample_sex, args.par_bed, args.output, min_samples,
+                                 ratio_sex=args.ratio_sex, capture_floor=args.capture_floor, prior=args.qc_prior,
+                                 out_prefix=prefix, boot=rec["boot"], jobs=rec["jobs"], verbose=args.verbose)
     except Exception as e:  # the PoN is written; a QC failure is reported, not fatal
         logger.error("QC failed after %.0f s: %s: %s", time.time() - t, type(e).__name__, e)
         rec.update(status=f"failed: {type(e).__name__}: {e}", seconds=round(time.time() - t, 1))
@@ -238,14 +238,16 @@ def main():
         "--pon_svd", action="store_true", help="Compute and store SVD components"
     )
     parser.add_argument(
-        "--tsv", action="store_true", help="Write human-readable TSV companion file"
+        "--tsv", action="store_true",
+        help="Also write <output>.tsv, the per-probe table as text with capture stats, for people to read; no tool "
+        "reads it",
     )
     parser.add_argument(
         "--capture_floor",
         type=float,
         default=0.1,
-        help="DP at or above which a sample counts as captured, for the TSV capture "
-        "columns cap_n/cap_share/cap_level (default 0.1 = cnvscope's pon_min_median)",
+        help="DP at or above which a sample counts as captured, for the TSV capture columns cap_n/cap_share/cap_level, "
+        "and the panel median DP from which the QC uses a probe (default 0.1 = cnvscope's pon_min_median)",
     )
     parser.add_argument(
         "--verbose", action="store_true", help="Enable debug logging"
@@ -271,7 +273,7 @@ def main():
     parser.add_argument(
         "--qc", dest="qc", action="store_true", default=None,
         help="Run the QC report (pon_qc.py next to this file) on the PoN just written: <output>.qc.* (default; "
-        "needs --tsv and --sample_sex)",
+        "needs --sample_sex)",
     )
     parser.add_argument("--no_qc", dest="qc", action="store_false", help="Do not run the QC report")
     parser.add_argument(
@@ -1073,7 +1075,7 @@ def main():
             del dp_matrix, dp0_matrix
             if args.tsv:
                 del tsv_df
-            side["qc"] = _build_qc(args, tsv_fname if args.tsv else None, min_samples, bool(sample_sex_arr))
+            side["qc"] = _build_qc(args, min_samples, bool(sample_sex_arr))
             _write_json(json_fname, side)
 
     logger.info(

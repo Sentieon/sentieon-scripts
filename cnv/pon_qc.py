@@ -1,45 +1,41 @@
 #!/usr/bin/env python3
-"""pon_qc.py -- quality report for a wes2.1 CNVscope panel of normals (PoN).
+"""pon_qc.py -- checks for a wes2.1 CNVscope panel of normals (PoN) and for the samples called with it.
 
 usage:
-  python3 -I pon_qc.py --input_list depth.<c>.list --sample_sex depth.<c>.sex.list --par_bed config/hs38.PAR.bed \\
-      --pon cnv_depth.<c>.male.pon.tsv [cnv_depth.<c>.female.pon.tsv] --min_samples N --out PREFIX \\
-      [--prior prior/cnvprior.hprc178.vcf.gz] [--test S.norm ...] [--admit S.norm ... [--admit_sex M F ...]] \\
-      [--compare OLD.male.pon.tsv [OLD.female.pon.tsv]] [--bootstrap 200] [--seed 20261110] [--jobs 4]
-  python3 -I pon_qc.py --pon NEW.male.pon.tsv [NEW.female.pon.tsv] --compare OLD.male.pon.tsv [...] --out PREFIX
+  python3 -I pon_qc.py --screen SAMPLE.norm --pon LAB.<sex>.pon [--out PREFIX]
+  python3 -I pon_qc.py --pon NEW.male.pon [NEW.female.pon] --compare OLD.male.pon [OLD.female.pon] --out PREFIX
 
-Inputs (--input_list members, --test, --admit) are raw .norm files: CNVscope --output_normalized from a run without
---pon_file (as wes1/data/rd_stats). The .norm that scripts/segment.sh writes is divided by the PoN (masked probes = 1);
-such files are flagged pon_divided (> 1% of probes exactly 1.0; raw files <= 0.007%, PoN-divided 8-9%).
-The panel inputs are create_pon.py's; each --pon is a --tsv table the builder wrote from that panel. The autosomal
-checks read the first table (male and female tables share their autosomal rows), the chrX/chrY counts every table.
-Transform and estimators are the builder's: log2(DP + 1e-6), column medians (mean of the two middle values),
-sigma2 = (1.4826 MAD)^2.
---prior is the prior .vcf.gz, or BUNDLE/MEMBER, a member of a model bundle (an ar archive), e.g.
-CNV_WES.bundle/cnvprior.vcf.gz; the member is copied to a temp file ($TMPDIR), read and removed (no .tbi needed).
-PREFIX.json records the path, the member and the md5 of the VCF bytes ("prior").
+--screen   one called sample against the binary PoN its call used. SAMPLE.norm is the call's own depth file (CNVscope
+           --output_normalized with --pon_file: PoN-divided, masked probes exactly 1, capped ones 8/m) or the depth file
+           of a run without --pon_file (PoN-free); more than 1% of probes exactly 1.0 marks a PoN-divided file.
+           On the autosomal probes CNVscope uses (referenced by the PoN, PoN median depth >= 0.1) the noise is the
+           1.4826 MAD of the log2 ratio to the PoN, as a multiple of the members' median leave-one-out noise that the
+           PoN's per-probe sigma2 predicts. The sex comes from the chrX non-PAR dosage against the autosomes and chrY.
+           fail: noise > 2.5x, more than 3% of those probes missing, or a sex other than the PoN's or XO-/XXY-like
+           (checked at noise <= 2.5x); warn: noise > 1.75x; pass otherwise. fail: the calls are unreliable and the
+           sample is not for the pool; pass or warn: a candidate for the pool. One line on stdout, PREFIX.tsv with
+           --out; exit 0 for any verdict, 1 for an input error.
+--compare  the stored medians and sigma2 of PoN NEW against OLD on the autosomal probes valid in both (_used: those
+           CNVscope uses in both), and the chrX/chrY probes each sex references. Writes PREFIX.compare.tsv,
+           PREFIX.compare.bed (regions shifted > 0.2 log2), PREFIX.json and PREFIX.txt.
 
-Checks (thresholds in T, calibrated in ponsize/analysis/qc/ by pon_qc_calib.py)
+run_build_qc() is the QC report create_pon.py runs on the PoN it has just written, from the binary PoN and the members'
+depth files (thresholds in T, calibrated in ponsize/analysis/qc/ by pon_qc_calib.py):
   0 verification   this script's full-panel median and sigma2 against the stored ones (valid autosomal probes)
   1 composition    N, sexes, empty members, chrX/chrY counts, --min_samples against the builder's auto rule
                    min(20, max(3, floor(n_smaller_sex/2))): members with probes; a sex with none does not count
-  2 precision      per-probe SE of the panel median: bootstrap over members (B=200) and 1.2533 sigma / sqrt(n);
-                   status on the median of SE/sigma (1.2533/sqrt(N) for a clean panel)
+  2 precision      per-probe SE of the panel median: bootstrap over members (B=200) and 1.2533 sigma / sqrt(n)
   3 unstable loci  probes with bootstrap SE > 0.2, or with >= 10% of members deviating on one side, merged into
                    regions with the prior's DEL/DUP AF (BED)
   4 members        leave-one-out (LOO) noise, CNV burden (5-probe running median), sex, missing probes
   5 batch          PCA of the noise-scaled LOO profiles on 20k probes; PC1 above a permutation null, 2-means silhouette
-  6 test samples   a sample's noise against the panel median, as a percentile and a multiple of the members' LOO noise
-  7 admission      --admit: is a called sample fit to join the pool? The member checks against the current panel;
-                   reject (does not match the panel), review (a member flag would fire) or admit
-  8 compare        --compare: the stored medians and sigma2 of this PoN against a previous version
-Verdicts: autosomes (N, relative SE, empty members, --min_samples, member mismatch/outliers, batch); chrX/chrY of the
-male PoN and chrX of the female PoN (members of that sex with probes, its chrX_ref, --min_samples, sex flags); na for
-a sex with no members with probes when no table of that sex is given.
-Noise, burden, PCA and unstable flags use the valid autosomal probes CNVscope does not mask (panel median DP >=
-#capture_floor, 0.1); at this setting the test noise equals CNVscope's measured noise.
-Writes PREFIX.report.tsv, PREFIX.members.tsv, PREFIX.unstable.bed, PREFIX.tests.tsv (--test), PREFIX.admit.tsv and
-PREFIX.admit_runs.tsv (--admit), PREFIX.compare.tsv and PREFIX.compare.bed (--compare), PREFIX.json and PREFIX.txt.
+Verdicts: autosomes; chrX/chrY of a male PoN; chrX of a female PoN (na for a sex with no members with probes, unless the
+PoN is of that sex). Members are depth files of runs without --pon_file (a PoN-divided one is flagged pon_divided).
+Transform and estimators are the builder's: log2(DP + 1e-6), column medians (mean of the two middle values),
+sigma2 = (1.4826 MAD)^2; n_valid and the panel median DP are recomputed from the members as the builder makes them.
+Noise, burden, PCA and unstable flags use the valid autosomal probes with panel median DP >= --capture_floor (0.1).
+The prior is a .vcf.gz, or BUNDLE/MEMBER, a member of a model bundle (copied to a temp file in $TMPDIR, read and
+removed). Writes PREFIX.report.tsv, .members.tsv, .unstable.bed, .json (with the prior's path, member and md5), .txt.
 """
 import sys
 
@@ -52,6 +48,7 @@ import json  # noqa: E402
 import multiprocessing as mp  # noqa: E402
 import os  # noqa: E402
 import re  # noqa: E402
+import struct  # noqa: E402
 import tempfile  # noqa: E402
 import time  # noqa: E402
 import warnings  # noqa: E402
@@ -84,19 +81,18 @@ T = {
     'noise_extreme': 2.5,                    # noise > 2.5x the members' median: another centre, kit or batch
     'burden_scale': 0.002, 'burden_floor': 0.005,  # burden scale floor; flagged burden also >= 0.5% of probes
     'pon_divided_one': 0.01,                 # > 1% of probes exactly 1.0: a PoN-divided .norm, not raw depth
-    'missing_scale': 0.005, 'missing_floor': 0.03,  # missing > 3% of the probes CNVscope uses (members, tests,
-                                             # admission); a .norm recovered by pon_norm_recover.py lacks the masked
-                                             # (unused) probes only
+    'missing_scale': 0.005, 'missing_floor': 0.03,  # missing > 3% of the probes CNVscope uses (members,
+                                             # --screen)
     'dev_log2': 0.5, 'dev_k': 4.0,           # a member deviates where |5-probe running median of its LOO ratio|
                                              # > max(0.5, 4 x its robust sd): CNV burden and two-state counts
     'run_log2': 0.3, 'run_k': 3.0,           # CNV run: consecutive probes with the 5-probe running median beyond
                                              # max(0.3, 3 x its robust sd) on one side, outside common CNV loci
-    'large_cnv_probes': 100,                 # member flag / admission review: a run of >= 100 probes (healthy
+    'large_cnv_probes': 100,                 # member flag: a run of >= 100 probes (healthy
                                              # members' longest run: median 20-33, p99 72-111, max 90-174)
     'x_one_copy': -0.5, 'y_present': -2.0,   # sex: chrX / chrY log2 depth against the panel's same-sex reference
     'pc1_warn': 0.15, 'pc1_fail': 0.25,      # PC1 variance share above its permutation null (noise-scaled profiles)
     'sil_warn': 0.60, 'sil_fail': 0.70,      # 2-means silhouette on PC1-3
-    'test_warn_ratio': 1.75,                 # test sample: warn above 1.75x the members' median noise
+    'test_warn_ratio': 1.75,                 # --screen: warn above 1.75x the members' median noise
     'outlier_warn': 0.20,                    # share of members with a noise, burden or large_cnv flag
     'turnover_a': 0.027, 'turnover_b': 0.745,  # compare: share of calls that change = a + b x shift_rsd (36 study PoN
                                              # pairs, R^2 0.78, residual sd 0.008)
@@ -183,20 +179,61 @@ def read_norm(path):
     return k, df.iloc[:, 3].values.astype(np.float64)
 
 
-def read_pon_tsv(path):
-    hdr, nskip = {}, 0
-    with open(path) as f:
-        for ln in f:
-            if not ln.startswith('#'):
-                break
-            nskip += 1
-            k, _, v = ln[1:].strip().partition('=')
-            hdr[k] = v
-    cols = ['contig', 'start', 'end', 'median_log2dp', 'n_valid', 'excluded', 'probe_idx', 'sigma2_dp',
-            'median_dp_male', 'median_dp_female', 'par_flag', 'panel_median_dp']
-    df = pd.read_csv(path, sep='\t', skiprows=nskip, usecols=cols, dtype={'contig': str})
+# create_pon.py's per-probe record (43 bytes, packed); svd_idx is read as probe_idx, flags as par_flag
+PON_DT = np.dtype([('cidx', '<u2'), ('start', '<u4'), ('end', '<u4'), ('median_log2dp', '<f4'),
+                   ('median_log2dp0', '<f4'), ('probe_idx', '<i4'), ('sigma2_dp', '<f4'), ('median_dp_male', '<f4'),
+                   ('median_dp_female', '<f4'), ('sigma2_dp_male', '<f4'), ('sigma2_dp_female', '<f4'),
+                   ('par_flag', 'u1')])
+PON_MIN_MEDIAN = 0.1                 # CNVscope's pon_min_median: it masks probes whose PoN median depth is below it
+
+
+def read_pon(path, sex=None):
+    """A binary PoN (CNVPON v1, as create_pon.py writes it): {'path', 'hdr', 'df', 'sex'}.
+
+    df: one row per probe in file order: contig, start, end, the stored fields as float64 (probe_idx is svd_idx: -1
+    dark, -2 non-autosomal and not referenced, >= 0 referenced), excluded (1 where probe_idx < 0: the PoN does not use
+    the probe) and key. hdr: version, n_samples, n_males, n_females, median_variance, n_svd_probes, k. sex: the
+    caller's; else 'M' when the PoN references a chrY probe, 'F' when it references chrX and no chrY, None otherwise.
+    The V_k matrices are not read."""
+    with open(path, 'rb') as f:
+        h = f.read(64)
+        if len(h) < 64 or h[:6] != b'CNVPON':
+            raise ValueError(f'{path}: not a binary PoN (no CNVPON header)')
+        ver, n_svd, k_dp, k_dp0, n_probes, n_contigs, n_samples, mvar = struct.unpack_from('<HIHHIHHf', h, 6)
+        if ver != 1:
+            raise ValueError(f'{path}: PoN version {ver}; this script reads version 1')
+        n_males, n_females = struct.unpack_from('<HH', h, 32)
+        names, off = [], 64
+        for _ in range(n_contigs):
+            b = f.read(2)
+            n = struct.unpack('<H', b)[0] if len(b) == 2 else 0
+            names.append(f.read(n).decode('utf-8', 'replace'))
+            off += 2 + n
+        size, want = os.path.getsize(path), off + PON_DT.itemsize * n_probes + 4 * n_svd * (k_dp + k_dp0)
+        if size != want:
+            raise ValueError(f'{path}: {size} bytes, but its header implies {want}')
+        tab = np.frombuffer(f.read(PON_DT.itemsize * n_probes), PON_DT)
+    if n_probes and int(tab['cidx'].max()) >= n_contigs:
+        raise ValueError(f'{path}: a probe names contig {int(tab["cidx"].max())} of {n_contigs}')
+    df = pd.DataFrame({'contig': np.asarray(names, dtype=object)[tab['cidx']],
+                       'start': tab['start'].astype(np.int64), 'end': tab['end'].astype(np.int64)})
+    for c in PON_DT.names[3:]:
+        df[c] = tab[c].astype(np.int64 if c in ('probe_idx', 'par_flag') else np.float64)
+    df['excluded'] = (df['probe_idx'].values < 0).astype(np.int64)
     df['key'] = pack(contig_code(df['contig'].values), df['start'].values, df['end'].values)
-    return {'path': path, 'hdr': hdr, 'df': df}
+    if sex is None:
+        ref = df['probe_idx'].values >= 0
+        sex = ('M' if (ref & df['contig'].isin(YN).values).any() else
+               'F' if (ref & df['contig'].isin(XN).values).any() else None)
+    hdr = {'version': ver, 'n_samples': n_samples, 'n_males': n_males, 'n_females': n_females,
+           'median_variance': mvar, 'n_svd_probes': n_svd, 'k': k_dp}
+    return {'path': path, 'hdr': hdr, 'df': df, 'sex': sex}
+
+
+def cnvscope_on(df):
+    """The probes CNVscope does not mask: referenced by the PoN, with PoN median depth >= pon_min_median. The others
+    are exactly 1 in a PoN-divided .norm."""
+    return (df['probe_idx'].values >= 0) & (df['median_log2dp'].values >= np.log2(PON_MIN_MEDIAN))
 
 
 AR_MAGIC = b'!<arch>\n'
@@ -356,6 +393,19 @@ class NormStore:
 
     def matrix(self, paths, cols):
         return np.stack([self.row[p][cols] for p in paths]) if paths else np.zeros((0, len(cols)))
+
+
+def member_stats(tb, store, paths, chunk=50000):
+    """n_valid (members with a value) and panel_median_dp (their median DP) of every probe of PoN tb, added to its df,
+    as create_pon.py makes them over all its members."""
+    df = tb['df']
+    cols = store.cols(df['key'].values)
+    nv, mdp = np.zeros(len(df), np.int64), np.full(len(df), np.nan)
+    for a in range(0, len(df), chunk):
+        M = store.matrix(paths, cols[a:a + chunk])
+        nv[a:a + chunk] = np.sum(~np.isnan(M), axis=0)
+        mdp[a:a + chunk] = fast_col_median(M, nv[a:a + chunk])
+    df['n_valid'], df['panel_median_dp'] = nv, mdp
 
 
 # ---- estimators ----------------------------------------------------------------------------------------------------
@@ -589,12 +639,6 @@ def nanmed(x):
     return float(np.median(x)) if len(x) else np.nan
 
 
-def robust_z(v):
-    m = np.nanmedian(v)
-    s = MAD_K * np.nanmedian(np.abs(v - m))
-    return (v - m) / s if s > 0 else np.zeros_like(v), m
-
-
 def status(v, warn, fail, high_bad=True):
     if v is None or (isinstance(v, float) and np.isnan(v)):
         return 'na'
@@ -604,32 +648,10 @@ def status(v, warn, fail, high_bad=True):
 
 
 # ---- the QC --------------------------------------------------------------------------------------------------------
-def derive_table(base, store, paths, min_samples, min_median_dp=0.02):
-    """A builder-rule autosomal table for a panel without its own PoN (probe index and chrX/chrY rows from base)."""
-    df = base['df'].copy()
-    auto = df['contig'].isin(AUTO).values
-    cols = store.cols(df['key'].values[auto])
-    M = store.matrix(paths, cols)
-    nv = np.sum(~np.isnan(M), axis=0)
-    mdp = fast_col_median(M, nv)
-    exc = (nv < min_samples) | (mdp < min_median_dp) | np.isnan(mdp)
-    L = np.log2(M + PSEUDO)
-    with np.errstate(all='ignore'):
-        s2, _ = mad_sigma2(L, nv)
-        med = np.nanmedian(L, axis=0)
-    df.loc[auto, 'n_valid'] = nv
-    df.loc[auto, 'panel_median_dp'] = mdp
-    df.loc[auto, 'excluded'] = exc.astype(int)
-    df.loc[auto, 'probe_idx'] = np.where(exc, -1, 0)
-    df.loc[auto, 'median_log2dp'] = np.where(exc, 0.0, np.float32(med))
-    df.loc[auto, 'sigma2_dp'] = np.where(exc, 0.0, np.float32(s2))
-    hdr = {'n_samples': str(len(paths)), 'virtual': '1'}
-    return {'path': '(derived)', 'hdr': hdr, 'df': df}
-
-
 def run_qc(paths, sexes, tables, store, par, min_samples=None, prior=None, B=200, seed=20261110, n_pca=20000,
-           tests=(), admits=(), admit_sex=None, verify=True, opt=None):
-    """Checks 0-7 for one panel. Returns a dict: res, probes, members, regions, tests, admit, runs."""
+           cf=PON_MIN_MEDIAN, verify=True, opt=None):
+    """Checks 0-5 for one panel. tables: read_pon() of its PoN, with member_stats(); cf: the capture floor. Returns a
+    dict: res, probes, members, regions."""
     t = dict(T, **(opt or {}))
     t0 = time.time()
     N = len(paths)
@@ -643,7 +665,6 @@ def run_qc(paths, sexes, tables, store, par, min_samples=None, prior=None, B=200
     keys = A['key'].values
     code = contig_code(A['contig'].values)
     P = len(A)
-    cf = float(tables[0]['hdr'].get('capture_floor', 0.1))
     used = A['panel_median_dp'].values >= cf          # the valid probes CNVscope does not mask
     res = {'n_members': N, 'n_valid_auto': P, 'n_used_auto': int(used.sum()), 'capture_floor': cf,
            'table': tables[0]['path']}
@@ -660,22 +681,19 @@ def run_qc(paths, sexes, tables, store, par, min_samples=None, prior=None, B=200
     L = np.log2(DP + PSEUDO)
     del DP
 
-    # 0 verification against the stored median and sigma2
+    # 0 verification against the stored float32 median and sigma2
     if verify:
         with np.errstate(all='ignore'):
             med64 = np.nanmedian(L, axis=0)
         s2, _ = mad_sigma2(L, nvd)
         st_med, st_s2 = A['median_log2dp'].values, A['sigma2_dp'].values
-        rnd = lambda x: np.array([float('%.6f' % v) for v in np.float32(x)])
         res['verify'] = {
             'median_max_abs_diff': float(np.nanmax(np.abs(med64 - st_med))),
-            'median_mismatch_after_rounding': int(np.sum(np.abs(rnd(med64) - st_med) > 1e-9)),
+            'median_mismatch_after_rounding': int(np.sum(med64.astype(np.float32) != st_med)),
             'sigma2_max_abs_diff': float(np.nanmax(np.abs(s2 - st_s2))),
-            'sigma2_mismatch_after_rounding': int(np.sum(np.abs(rnd(s2) - st_s2) > 1e-9)),
-            'n_valid_mismatch': int(np.sum(nvd != A['n_valid'].values)),
+            'sigma2_mismatch_after_rounding': int(np.sum(s2.astype(np.float32) != st_s2)),
         }
         del s2
-    st_med = A['median_log2dp'].values.astype(np.float64)
     LT = np.ascontiguousarray(L.T, dtype=np.float32)
     del L
     S, order, rank, nv = sort_panel(LT)
@@ -695,8 +713,7 @@ def run_qc(paths, sexes, tables, store, par, min_samples=None, prior=None, B=200
             'min_samples_rule': rule, 'min_samples_inferred': [hi_ms, lo_ms], 'tables': []}
     for tb in tables:
         d = tb['df']
-        rs = tb['hdr'].get('ratio_sex', '')
-        row = {'path': tb['path'], 'ratio_sex': rs, 'n_samples': tb['hdr'].get('n_samples'),
+        row = {'path': tb['path'], 'ratio_sex': tb['sex'] or '', 'n_samples': tb['hdr'].get('n_samples'),
                'n_males': tb['hdr'].get('n_males'), 'n_females': tb['hdr'].get('n_females'),
                'valid': int((d['excluded'] == 0).sum())}
         for lab, nm in (('chrX', XN), ('chrY', YN)):
@@ -798,7 +815,7 @@ def run_qc(paths, sexes, tables, store, par, min_samples=None, prior=None, B=200
     fl_se = (se > t['se_unstable']) & used
     flag = fl_se | fl_bi
     probes = {'key': keys, 'code': code, 'start': A['start'].values, 'end': A['end'].values, 'contig': A['contig'].values,
-              'med': med, 'stored_med': st_med, 'sigma2': sig ** 2, 'se_boot': se, 'se_an': se_an, 'nv': nv,
+              'med': med, 'sigma2': sig ** 2, 'se_boot': se, 'se_an': se_an, 'nv': nv,
               'f_lo': f_lo, 'f_hi': f_hi, 'flag': flag, 'used': used, 'common': common}
     regions = merge_regions(probes, flag, fl_se, fl_bi, t, prior)
     res['unstable'] = {'probes_flagged': int(flag.sum()), 'probes_se': int(fl_se.sum()), 'probes_bimodal': int(fl_bi.sum()),
@@ -813,26 +830,9 @@ def run_qc(paths, sexes, tables, store, par, min_samples=None, prior=None, B=200
     res['batch'] = batch_structure(prof[~empty], rng)
     log(f'  batch ({time.time() - t0:.0f}s)')
 
-    # 6 test samples and 7 admission candidates, scored against the stored medians
-    ctx = (store, df, keys, st_med, used, code, common, pinfo, mem, empty, refX, refY, xm, ym, t)
-    tr = []
-    for tp in tests:
-        r, _ = score_sample(tp, *ctx)
-        r['status'] = test_status(r, t)
-        tr.append(r)
-    ar, runs = [], []
-    asx = admit_sex or {}
-    for ap_ in admits:
-        r, rr = score_sample(ap_, *ctx, min_len=10)
-        r['sex_declared'] = asx.get(ap_, '')
-        r['verdict'], r['rules'] = admit_verdict(r, r['sex_declared'], t)
-        ar.append(r)
-        runs += rr
-    res['tests'], res['admit'] = tr, ar
     res['seconds'] = round(time.time() - t0, 1)
     res['status'] = panel_status(res, t)
-    return {'res': res, 'probes': probes, 'members': mem, 'regions': regions, 'tests': pd.DataFrame(tr),
-            'admit': pd.DataFrame(ar), 'runs': pd.DataFrame(runs)}
+    return {'res': res, 'probes': probes, 'members': mem, 'regions': regions}
 
 
 def sex_probe_sets(df, par):
@@ -940,136 +940,6 @@ def batch_structure(prof, rng, n_null=3):
     return out
 
 
-def score_sample(path, store, df, keys, st_med, used, code, common, pinfo, mem, empty, refX, refY, xm, ym, t,
-                 min_len=10):
-    """A non-member's ratio to the stored medians, scored with the member statistics and against the members."""
-    store.load([path])
-    row = store.row[path]
-    x = row[store.cols(keys)]
-    n_file = store.n_file[path]
-    n_in = int(np.count_nonzero(~np.isnan(row[store.cols(df['key'].values)])))
-    R = np.log2(x + PSEUDO) - st_med
-    has = ~np.isnan(R)
-    st, sm, hu = ratio_stats(R, has, used, code, t)
-    one = float(np.mean(x[has] == 1.0)) if has.any() else np.nan
-    hu_ = has & used
-    pcor = float(np.corrcoef(np.log2(x[hu_] + PSEUDO), st_med[hu_])[0, 1]) if hu_.sum() > 100 else np.nan
-    r = {'sample': sample_name(path), 'path': path, 'n_probes_file': n_file, 'missing_frac': float(1 - has[used].mean()),
-         'missing_frac_all': float(1 - has.mean()),
-         'extra_frac': float((n_file - n_in) / n_file) if n_file else np.nan, 'one_share': one, 'pon_corr': pcor}
-    r.update({k: v for k, v in st.items() if k not in ('auto_off', 'sm_sd')})
-    ok = ~np.asarray(empty)
-    ref, bref = mem['noise'].values[ok].astype(float), mem['burden'].values[ok].astype(float)
-    ref, bref = ref[~np.isnan(ref)], bref[~np.isnan(bref)]
-    noise = r.get('noise', np.nan)
-    m = float(np.nanmedian(ref)) if len(ref) else np.nan
-    r.update({'noise_pct': float(100 * np.nanmean(ref <= noise)) if len(ref) and not np.isnan(noise) else np.nan,
-              'noise_over_median': float(noise / m) if len(ref) and not np.isnan(noise) else np.nan,
-              'noise_over_max': float(noise / np.nanmax(ref)) if len(ref) and not np.isnan(noise) else np.nan,
-              'members_noise_median': m})
-    if len(ref) >= 3 and not np.isnan(noise):
-        r['z_noise'] = (noise - m) / max(MAD_K * np.nanmedian(np.abs(ref - m)), t['noise_scale'] * m)
-        mb = float(np.nanmedian(bref))
-        r['z_burden'] = (r['burden'] - mb) / max(MAD_K * np.nanmedian(np.abs(bref - mb)), t['burden_scale'])
-    runs = []
-    if sm is not None:
-        rl, rv = cnv_runs(sm, hu, st['sm_sd'], code, common, pinfo, t)
-        r.update(longest(rl))
-        r['run_thr'] = rv
-        runs = [dict(sample=r['sample'], **u) for u in rl if u['n_probes'] >= min_len]
-    off = st.get('auto_off', np.nan)
-    lx = np.log2(row[store.cols(df['key'].values[xm])] + PSEUDO) if xm.any() else np.zeros(0)
-    ly = np.log2(row[store.cols(df['key'].values[ym])] + PSEUDO) if ym.any() else np.zeros(0)
-    xl = nanmed(lx - refX) - off if len(lx) and not np.isnan(off) else np.nan
-    yl = nanmed(ly - refY) - off if len(ly) and not np.isnan(off) else np.nan
-    r.update({'x_l2': xl, 'y_l2': yl, 'sex_inferred': infer_sex(xl, yl, t),
-              'sex_basis': 'NA' if np.isnan(xl) else 'X only' if np.isnan(yl) else 'X+Y'})
-    return r, runs
-
-
-def test_status(r, t):
-    if np.isnan(r.get('noise', np.nan)) or r['missing_frac'] > t['missing_floor'] or \
-            r['noise_over_median'] > t['noise_extreme'] or r.get('one_share', 0) > t['pon_divided_one']:
-        return 'fail'
-    return 'warn' if r['noise_over_median'] > t['test_warn_ratio'] else 'pass'
-
-
-def admit_verdict(r, declared, t):
-    """reject: the sample does not match the panel; review: a member flag would fire; admit otherwise."""
-    rej, rev = [], []
-    if not r['n_probes_file'] or np.isnan(r.get('noise', np.nan)):
-        return 'reject', 'empty'
-    if r.get('one_share', 0) > t['pon_divided_one']:
-        return 'reject', 'pon_divided'
-    if r['missing_frac'] > t['missing_floor']:
-        rej.append('missing')
-    if r['noise_over_median'] > t['noise_extreme']:
-        rej.append('noise_extreme')
-    elif r.get('z_noise', np.nan) > t['z_out']:
-        rev.append('noise')
-    if r.get('z_burden', np.nan) > t['z_out'] and r['burden'] > t['burden_floor']:
-        rev.append('burden')
-    if r.get('max_run', 0) >= t['large_cnv_probes']:
-        rev.append('large_cnv')
-    s_ = r['sex_inferred']
-    if s_ in ('XO-like', 'XXY-like'):
-        rej.append('sex_ambiguous')
-    elif declared in ('M', 'F') and s_ in ('M', 'F') and s_ != declared:
-        rev.append('sex_mismatch')
-    return ('reject' if rej else 'review' if rev else 'admit'), ','.join(rej + rev)
-
-
-def compare_tables(new, old, t, xy=()):
-    """Stored medians and sigma2 of PoN `new` against `old` over the autosomal probes valid in both."""
-    def valid(tb):
-        d = tb['df']
-        return d[(d['excluded'].values == 0) & d['contig'].isin(AUTO).values]
-
-    a, b = valid(new), valid(old)
-    _, ia, ib = np.intersect1d(a['key'].values, b['key'].values, return_indices=True)
-    sh = a['median_log2dp'].values[ia] - b['median_log2dp'].values[ib]
-    used = ((a['panel_median_dp'].values[ia] >= float(new['hdr'].get('capture_floor', 0.1))) &
-            (b['panel_median_dp'].values[ib] >= float(old['hdr'].get('capture_floor', 0.1))))
-    s2a, s2b = a['sigma2_dp'].values[ia], b['sigma2_dp'].values[ib]
-    hn, ho = new['hdr'], old['hdr']
-    out = {'new': new['path'], 'old': old['path'], 'n_samples_new': hn.get('n_samples'),
-           'n_samples_old': ho.get('n_samples'), 'valid_new': len(a), 'valid_old': len(b), 'common': len(ia),
-           'gained': len(a) - len(ia), 'lost': len(b) - len(ia)}
-    for sfx, m in (('', np.ones(len(sh), bool)), ('_used', used)):
-        x = sh[m]
-        out.update({f'n{sfx}': int(m.sum()), f'shift_mean{sfx}': float(x.mean()), f'shift_sd{sfx}': float(x.std()),
-                    f'shift_rsd{sfx}': rmad(x), f'frac_abs_gt_0.1{sfx}': float(np.mean(np.abs(x) > 0.1)),
-                    f'frac_abs_gt_0.2{sfx}': float(np.mean(np.abs(x) > 0.2)),
-                    f'frac_gt_0.2{sfx}': float(np.mean(x > 0.2)), f'frac_lt_-0.2{sfx}': float(np.mean(x < -0.2)),
-                    f'p99_abs{sfx}': float(np.percentile(np.abs(x), 99))})
-    pos = s2b > 0
-    out.update({'sigma2_median_new': float(np.median(s2a)), 'sigma2_median_old': float(np.median(s2b)),
-                'sigma2_ratio_of_medians': float(np.median(s2a) / np.median(s2b)),
-                'sigma2_median_probe_ratio': float(np.median(s2a[pos] / s2b[pos]))})
-    for tn, to in xy:
-        rs = tn['hdr'].get('ratio_sex', '-')
-        for lab, nm in (('chrX', XN), ('chrY', YN)):
-            def ref(tb):
-                d = tb['df']
-                return set(d['key'].values[d['contig'].isin(nm).values & (d['probe_idx'].values >= 0)])
-            kn, ko = ref(tn), ref(to)
-            out.update({f'{lab}_ref_new[{rs}]': len(kn), f'{lab}_ref_old[{rs}]': len(ko),
-                        f'{lab}_gained[{rs}]': len(kn - ko), f'{lab}_lost[{rs}]': len(ko - kn)})
-    big = np.abs(sh) > 0.2
-    shifted = []
-    if big.any():
-        idx = np.flatnonzero(big)
-        ca, sa, ea = a['contig'].values[ia], a['start'].values[ia], a['end'].values[ia]
-        new_ = np.r_[True, (ca[idx[1:]] != ca[idx[:-1]]) | (idx[1:] - idx[:-1] > 2) |
-                     (sa[idx[1:]] - ea[idx[:-1]] > t['merge_gap_bp'])]
-        for g in np.split(idx, np.flatnonzero(new_)[1:]):
-            shifted.append({'contig': ca[g[0]], 'start': int(sa[g[0]]), 'end': int(ea[g[-1]]), 'n_shifted': len(g),
-                            'mean_shift': float(sh[g].mean()), 'max_abs_shift': float(np.abs(sh[g]).max())})
-    out['shifted_regions'] = len(shifted)
-    out['expected_call_turnover'] = t['turnover_a'] + t['turnover_b'] * out['shift_rsd']
-    return out, pd.DataFrame(shifted, columns=['contig', 'start', 'end', 'n_shifted', 'mean_shift', 'max_abs_shift'])
-
-
 def merge_regions(p, flag, fl_se, fl_bi, t, prior):
     idx = np.flatnonzero(flag)
     cols = ['contig', 'start', 'end', 'n_flag', 'n_probes', 'reason', 'max_se', 'max_frac_lo', 'max_frac_hi',
@@ -1153,6 +1023,169 @@ def panel_status(res, t):
     return st
 
 
+# ---- the screen ----------------------------------------------------------------------------------------------------
+REF_K = 1.0076                    # members' median noise / estimate: median over the study's 22 panels (sd 3.6%)
+
+
+def ref_noise(pon):
+    """The members' median LOO noise that the PoN predicts: REF_K x the median sigma of the autosomal probes CNVscope
+    uses x sqrt(1 + pi / (2 (N - 1))), the LOO median's variance."""
+    df = pon['df']
+    u = cnvscope_on(df) & df['contig'].isin(AUTO).values
+    sig = np.sqrt(np.maximum(df['sigma2_dp'].values[u], 0))
+    n = max(int(pon['hdr']['n_samples']) - 1, 1)
+    return REF_K * float(np.median(sig)) * np.sqrt(1 + np.pi / 2 / n) if len(sig) else np.nan
+
+
+def screen(norm_path, pon, t=T):
+    """--screen: a called sample's depth file against the binary PoN its call used (read_pon). Returns the PREFIX.tsv
+    row as a dict; raises ValueError when no probe of the file is in the PoN."""
+    df = pon['df']
+    k, dp = read_norm(norm_path)
+    pk = df['key'].values
+    o = np.argsort(pk, kind='stable')
+    i = np.minimum(np.searchsorted(pk[o], k), len(pk) - 1)
+    ok = pk[o][i] == k
+    if not ok.any():
+        raise ValueError(f'{norm_path}: none of its {len(k)} probes is in the PoN {pon["path"]}')
+    x = np.full(len(df), np.nan)
+    x[o[i[ok]]] = dp[ok]
+    contig, med = df['contig'].values, df['median_log2dp'].values
+    auto, isx, isy = np.isin(contig, list(AUTO)), np.isin(contig, XN), np.isin(contig, YN)
+    on = cnvscope_on(df)
+    used = on & auto
+    have = ~np.isnan(x)
+    va = auto & (df['probe_idx'].values >= 0) & have
+    one_share = float(np.mean(x[va] == 1.0)) if va.any() else np.nan
+    divided = one_share > t['pon_divided_one']
+    with np.errstate(divide='ignore', invalid='ignore'):
+        if divided:                                   # DP = min(DP_raw / 2^median, 8) / m: masked rows exactly 1
+            masked = x == 1.0
+            v = x[on & have & ~masked]
+            top = v.max() if len(v) else np.nan
+            capped = x == top if np.sum(v == top) >= 2 else np.zeros(len(x), bool)   # the ratio cap 8/m
+            L = np.where(have & ~masked & ~capped, np.log2(x), np.nan)              # log2 ratio - log2(m)
+        else:
+            masked = capped = np.zeros(len(x), bool)
+            L = np.log2(x + PSEUDO) - med
+    hu = used & ~np.isnan(L)
+    n_used = int(used.sum())
+    n_miss = int(np.sum(used & ~(have & ~masked)))
+    noise = rmad(L[hu]) if hu.sum() >= 100 else np.nan
+    off = float(np.median(L[hu])) if hu.any() else np.nan
+    ref = ref_noise(pon)
+    # sex: chrX non-PAR and chrY against the PoN's two-copy reference; without one (PoN-free input only), the stored
+    # same-sex medians (female chrX, else male + 1; male chrY at the one-copy level)
+    hdr, lo, npar = pon['hdr'], np.log2(PON_MIN_MEDIAN), df['par_flag'].values == 0
+    xs, ys, xl, yl, yshift = isx & npar & on, isy & on, L, L, 1.0
+    if not xs.any() and not divided:
+        alt = df['median_dp_female'].values if hdr['n_females'] else df['median_dp_male'].values + 1.0
+        with np.errstate(invalid='ignore'):
+            xs = isx & npar & (alt >= lo)
+            xl = np.log2(x + PSEUDO) - alt
+    if not ys.any() and not divided and hdr['n_males']:
+        mm = df['median_dp_male'].values
+        with np.errstate(invalid='ignore'):
+            ys = isy & npar & (mm >= lo)
+        yl, yshift = np.log2(x + PSEUDO) - mm, 0.0
+    x_l2 = nanmed(xl[xs]) - off if xs.any() and not np.isnan(off) else np.nan
+    y_l2 = nanmed(yl[ys]) - off + yshift if ys.any() and not np.isnan(off) else np.nan
+    sx = infer_sex(x_l2, y_l2, t)
+    ratio = noise / ref if ref > 0 else np.nan
+    fails, notes = [], []
+    if np.isnan(ratio):
+        fails.append('noise')
+        notes.append(f'fewer than 100 of the {n_used} probes CNVscope uses have a value')
+    elif ratio > t['noise_extreme']:
+        fails.append('noise')
+        notes.append(f"noise {ratio:.2f}x the PoN's members (> {t['noise_extreme']}x): another centre, kit or batch")
+    if n_used and n_miss / n_used > t['missing_floor']:
+        fails.append('missing')
+        notes.append(f"{n_miss / n_used:.1%} of the probes CNVscope uses are missing (> {t['missing_floor']:.0%})")
+    ps = pon['sex']
+    if ps and not ratio <= t['noise_extreme']:       # another centre, kit or batch shifts chrX dosage by up to 0.5 log2
+        notes.append('sex not checked at this noise')
+    elif ps and sx in ('M', 'F') and sx != ps:
+        fails.append('sex_mismatch')
+        other = {'M': 'male', 'F': 'female'}[sx]
+        notes.append(f"the sample looks {other} and the PoN is {'male' if ps == 'M' else 'female'}: re-call it with "
+                     f"the {other} kit files and PoN")
+    elif ps and sx in ('XO-like', 'XXY-like'):
+        fails.append('sex_aneuploid')
+        notes.append(f'{sx} sex chromosomes')
+    verdict = 'fail' if fails else 'warn' if ratio > t['test_warn_ratio'] else 'pass'
+    if verdict == 'warn':
+        notes.append(f"noise {ratio:.2f}x the PoN's members (> {t['test_warn_ratio']}x)")
+    return {'sample': sample_name(norm_path), 'verdict': verdict, 'reasons': ','.join(fails),
+            'noise_ratio': ratio, 'noise': noise, 'ref_noise': ref, 'missing_frac': n_miss / n_used if n_used else np.nan,
+            'n_used': n_used, 'n_missing': n_miss, 'n_capped': int(np.sum(capped & used)),
+            'sex_inferred': 'not checked' if ps and not ratio <= t['noise_extreme'] else sx,   # unreliable there
+            'sex_basis': 'NA' if np.isnan(x_l2) else 'X only' if np.isnan(y_l2) else 'X+Y',
+            'x_l2': x_l2, 'y_l2': y_l2, 'pon_sex': ps or 'none',
+            'input': 'PoN-divided' if divided else 'PoN-free', 'one_share': one_share, 'n_probes_file': len(k),
+            'pon': pon['path'], 'norm': norm_path, 'note': '; '.join(notes)}
+
+
+def screen_line(r):
+    pct = lambda v: 'NA' if np.isnan(v) else f'{100 * v:.2f}%'
+    ratio = 'NA' if np.isnan(r['noise_ratio']) else f"{r['noise_ratio']:.2f}x"
+    line = (f"{r['sample']}  {r['verdict'].upper()}  noise {ratio}  missing {pct(r['missing_frac'])}  "
+            f"sex {r['sex_inferred']} (PoN {r['pon_sex']})  input {r['input']}")
+    return line + (f"  -- {r['note']}" if r['note'] else '')
+
+
+# ---- compare -------------------------------------------------------------------------------------------------------
+def compare_tables(new, old, t, xy=()):
+    """Stored medians and sigma2 of PoN `new` against `old` (read_pon) over the autosomal probes valid in both."""
+    def valid(tb):
+        d = tb['df']
+        return d[(d['excluded'].values == 0) & d['contig'].isin(AUTO).values]
+
+    a, b = valid(new), valid(old)
+    _, ia, ib = np.intersect1d(a['key'].values, b['key'].values, return_indices=True)
+    sh = a['median_log2dp'].values[ia] - b['median_log2dp'].values[ib]
+    lo = np.log2(PON_MIN_MEDIAN)
+    used = (a['median_log2dp'].values[ia] >= lo) & (b['median_log2dp'].values[ib] >= lo)   # CNVscope uses them
+    s2a, s2b = a['sigma2_dp'].values[ia], b['sigma2_dp'].values[ib]
+    hn, ho = new['hdr'], old['hdr']
+    out = {'new': new['path'], 'old': old['path'], 'n_samples_new': hn.get('n_samples'),
+           'n_samples_old': ho.get('n_samples'), 'valid_new': len(a), 'valid_old': len(b), 'common': len(ia),
+           'gained': len(a) - len(ia), 'lost': len(b) - len(ia)}
+    for sfx, m in (('', np.ones(len(sh), bool)), ('_used', used)):
+        x = sh[m]
+        out.update({f'n{sfx}': int(m.sum()), f'shift_mean{sfx}': float(x.mean()), f'shift_sd{sfx}': float(x.std()),
+                    f'shift_rsd{sfx}': rmad(x), f'frac_abs_gt_0.1{sfx}': float(np.mean(np.abs(x) > 0.1)),
+                    f'frac_abs_gt_0.2{sfx}': float(np.mean(np.abs(x) > 0.2)),
+                    f'frac_gt_0.2{sfx}': float(np.mean(x > 0.2)), f'frac_lt_-0.2{sfx}': float(np.mean(x < -0.2)),
+                    f'p99_abs{sfx}': float(np.percentile(np.abs(x), 99))})
+    pos = s2b > 0
+    out.update({'sigma2_median_new': float(np.median(s2a)), 'sigma2_median_old': float(np.median(s2b)),
+                'sigma2_ratio_of_medians': float(np.median(s2a) / np.median(s2b)),
+                'sigma2_median_probe_ratio': float(np.median(s2a[pos] / s2b[pos]))})
+    for tn, to in xy:
+        rs = tn['sex'] or '-'
+        for lab, nm in (('chrX', XN), ('chrY', YN)):
+            def ref(tb):
+                d = tb['df']
+                return set(d['key'].values[d['contig'].isin(nm).values & (d['probe_idx'].values >= 0)])
+            kn, ko = ref(tn), ref(to)
+            out.update({f'{lab}_ref_new[{rs}]': len(kn), f'{lab}_ref_old[{rs}]': len(ko),
+                        f'{lab}_gained[{rs}]': len(kn - ko), f'{lab}_lost[{rs}]': len(ko - kn)})
+    big = np.abs(sh) > 0.2
+    shifted = []
+    if big.any():
+        idx = np.flatnonzero(big)
+        ca, sa, ea = a['contig'].values[ia], a['start'].values[ia], a['end'].values[ia]
+        new_ = np.r_[True, (ca[idx[1:]] != ca[idx[:-1]]) | (idx[1:] - idx[:-1] > 2) |
+                     (sa[idx[1:]] - ea[idx[:-1]] > t['merge_gap_bp'])]
+        for g in np.split(idx, np.flatnonzero(new_)[1:]):
+            shifted.append({'contig': ca[g[0]], 'start': int(sa[g[0]]), 'end': int(ea[g[-1]]), 'n_shifted': len(g),
+                            'mean_shift': float(sh[g].mean()), 'max_abs_shift': float(np.abs(sh[g]).max())})
+    out['shifted_regions'] = len(shifted)
+    out['expected_call_turnover'] = t['turnover_a'] + t['turnover_b'] * out['shift_rsd']
+    return out, pd.DataFrame(shifted, columns=['contig', 'start', 'end', 'n_shifted', 'mean_shift', 'max_abs_shift'])
+
+
 # ---- outputs -------------------------------------------------------------------------------------------------------
 def report_rows(res, t):
     c, p, u, m, b, st = (res['composition'], res['precision'], res['unstable'], res['members'], res['batch'],
@@ -1163,9 +1196,9 @@ def report_rows(res, t):
     v = res.get('verify')
     if v:
         ok = v['median_mismatch_after_rounding'] == 0 and v['sigma2_mismatch_after_rounding'] == 0
-        add('0_verify', 'median_max_abs_diff', f"{v['median_max_abs_diff']:.2e}", 'equal after float32 + %.6f',
+        add('0_verify', 'median_max_abs_diff', f"{v['median_max_abs_diff']:.2e}", 'equal after float32',
             'pass' if ok else 'fail', f"mismatches: median {v['median_mismatch_after_rounding']}, sigma2 "
-            f"{v['sigma2_mismatch_after_rounding']}, n_valid {v['n_valid_mismatch']}")
+            f"{v['sigma2_mismatch_after_rounding']}")
         add('0_verify', 'sigma2_max_abs_diff', f"{v['sigma2_max_abs_diff']:.2e}", '', 'pass' if ok else 'fail')
     ne = c['n'] - len(c['empty'])
     add('1_composition', 'n_members', c['n'], f">= {t['n_pass']} pass, >= {t['n_warn']} warn", st['n'],
@@ -1232,16 +1265,6 @@ def report_rows(res, t):
             st['batch_pc1'], f"PC1 {b['pc1']:.4f} minus permutation null {b['pc1_null']:.4f}")
         add('5_batch', 'silhouette', f"{b['sil']:.3f}", f"<= {t['sil_warn']} pass, <= {t['sil_fail']} warn",
             st['batch_sil'], f"2-means on PC1-3, clusters {b['clusters']}")
-    for r in res['tests']:
-        add('6_test', r['sample'], f"{r['noise']:.4f}", f"noise <= {t['test_warn_ratio']}x members' median pass, "
-            f"<= {t['noise_extreme']}x warn; missing <= {t['missing_floor']:.0%}", r['status'],
-            f"pct {r['noise_pct']:.0f}, x{r['noise_over_median']:.2f} of median, missing {r['missing_frac']:.3f}, "
-            f"sex {r['sex_inferred']}" + (", PoN-divided .norm" if r.get('one_share', 0) > t['pon_divided_one'] else ''))
-    for r in res.get('admit', []):
-        add('7_admit', r['sample'], r['verdict'], 'reject: noise > 2.5x median, missing > 3%, sex ambiguous; review: a '
-            'member flag (noise, burden, large_cnv, sex_mismatch)', r['verdict'],
-            f"{r['rules'] or '-'}; noise {r.get('noise', np.nan):.3f} (pct {r.get('noise_pct', np.nan):.0f}, "
-            f"x{r.get('noise_over_median', np.nan):.2f}), longest run {r.get('max_run', 0)} {r.get('max_run_region', '')}")
     add('verdict', 'autosomes', st['autosomes'], 'N, rel SE, empty, min_samples, member mismatch/outliers, batch',
         st['autosomes'])
     add('verdict', 'chrX/chrY (male PoN)', st['chrXY_male'], 'males with probes, male chrX_ref, min_samples, sex flags',
@@ -1293,25 +1316,16 @@ def jsonable(o):
     return o
 
 
-def write_outputs(prefix, out, cmp=None, t=T):
+def write_outputs(prefix, out, t=T):
     res = out['res']
     rep = report_rows(res, t)
-    if cmp is not None:
-        rep = pd.concat([rep, compare_rows(cmp[0])], ignore_index=True)
     rep.to_csv(prefix + '.report.tsv', sep='\t', index=False)
     out['members'].drop(columns=['path']).to_csv(prefix + '.members.tsv', sep='\t', index=False, float_format='%.5f')
     with open(prefix + '.unstable.bed', 'w') as f:
         f.write('#' + '\t'.join(out['regions'].columns) + '\n')
         out['regions'].to_csv(f, sep='\t', index=False, header=False, float_format='%.4f')
-    for k, sfx in (('tests', '.tests.tsv'), ('admit', '.admit.tsv'), ('runs', '.admit_runs.tsv')):
-        x = out[k]
-        if len(x):
-            x.drop(columns=['path'], errors='ignore').to_csv(prefix + sfx, sep='\t', index=False, float_format='%.5f')
     js = dict(res)
     js['batch'] = {k: v for k, v in res['batch'].items() if k != 'labels'}
-    if cmp is not None:
-        js['compare'] = cmp[0]
-        write_compare(prefix, cmp)
     with open(prefix + '.json', 'w') as f:
         json.dump(jsonable(js), f, indent=1)
     txt = summary_text(res, rep)
@@ -1339,115 +1353,95 @@ def compare_text(c):
     return '\n'.join(lines)
 
 
-def read_admit_sex(vals, paths):
-    """--admit_sex: one M/F per --admit sample, or one file of path<TAB>M|F lines."""
-    if len(vals) == 1 and os.path.exists(vals[0]):
-        return read_sex(vals[0])
-    if vals and len(vals) != len(paths):
-        sys.exit(f'--admit_sex: {len(vals)} values for {len(paths)} --admit samples')
-    return {p: v.upper()[:1] for p, v in zip(paths, vals)}
-
-
-def run_build_qc(input_list, sample_sex, par_bed, pon_tsv_paths, min_samples, prior=None, out_prefix='pon_qc',
-                 boot=200, jobs=1, seed=20261110, pca_probes=20000, tests=(), admit=(), admit_sex=None, compare=None,
-                 verbose=False):
+def run_build_qc(input_list, sample_sex, par_bed, pon, min_samples, ratio_sex=None, capture_floor=PON_MIN_MEDIAN,
+                 prior=None, out_prefix='pon_qc', boot=200, jobs=1, seed=20261110, pca_probes=20000, verbose=False):
     """QC of a freshly built PoN, for create_pon.py to call after it writes the PoN.
 
-    input_list, sample_sex, par_bed and min_samples are the builder's inputs; pon_tsv_paths are the --tsv tables it
-    wrote (male and/or female); prior is the population CNV prior VCF or BUNDLE/MEMBER of a model bundle (read_prior),
-    or None (no prior AF annotation), and the JSON's "prior" records the path, member and md5 read; boot is the
-    number of bootstrap draws; jobs the processes reading the .norm files. Optional: tests and admit (raw .norm paths),
-    admit_sex ({path: 'M'|'F'}), compare (previous .pon.tsv paths). Writes out_prefix.report.tsv, .members.tsv,
-    .unstable.bed, .json and .txt (and .tests.tsv, .admit.tsv, .admit_runs.tsv, .compare.tsv, .compare.bed when asked)
-    and nothing else; logs to stderr only with verbose. Returns the status dict: one status per check and the verdicts
-    'autosomes', 'chrXY_male' and 'chrX_female' (pass, warn or fail; a sex verdict is na when the panel has no members
-    of that sex with probes and no table of that sex is given). Importers set sys.dont_write_bytecode = True
-    before `import pon_qc` (or run python -B): the guard in this module cannot stop its own .pyc.
+    input_list, sample_sex, par_bed, min_samples, ratio_sex ('M', 'F' or None) and capture_floor are the builder's
+    inputs; pon is the binary PoN it wrote; prior is the population CNV prior VCF or BUNDLE/MEMBER of a model bundle
+    (read_prior), or None (no prior AF annotation), and the JSON's "prior" records the path, member and md5 read; boot
+    is the number of bootstrap draws; jobs the processes reading the .norm files. Writes out_prefix.report.tsv,
+    .members.tsv, .unstable.bed, .json and .txt and nothing else; logs to stderr only with verbose. Returns the status
+    dict: one status per check and the verdicts 'autosomes', 'chrXY_male' and 'chrX_female' (pass, warn or fail; a sex
+    verdict is na when the panel has no members of that sex with probes and the PoN is not of that sex). Importers set
+    sys.dont_write_bytecode = True before `import pon_qc` (or run python -B): the guard in this module cannot stop its
+    own .pyc.
     """
     global VERBOSE
     old_v, VERBOSE = VERBOSE, verbose
     try:
         if prior:
-            prior_member(prior)  # a bad prior fails here, before any table or .norm is read
+            prior_member(prior)  # a bad prior fails here, before the PoN or any .norm is read
         with warnings.catch_warnings(), np.errstate(all='ignore'):
             warnings.simplefilter('ignore', RuntimeWarning)
-            tables = [read_pon_tsv(p) for p in pon_tsv_paths]
-            tables.sort(key=lambda tb: tb['hdr'].get('ratio_sex') != 'M')
-            cmp = None
-            if compare:
-                old = [read_pon_tsv(p) for p in compare]
-                bysex = {tb['hdr'].get('ratio_sex', ''): tb for tb in old}
-                old.sort(key=lambda tb: tb['hdr'].get('ratio_sex') != 'M')
-                xy = [(tb, bysex[tb['hdr'].get('ratio_sex', '')]) for tb in tables if tb['hdr'].get('ratio_sex', '') in bysex]
-                cmp = compare_tables(tables[0], old[0], T, xy)
+            tb = read_pon(pon)
+            tb['sex'] = ratio_sex or None               # the builder's --ratio_sex, not inferred
             paths = read_list(input_list)
             sx = read_sex(sample_sex)
             miss = [p for p in paths if p not in sx]
             if miss:
                 raise ValueError(f'no sex annotation for {len(miss)} members, e.g. {miss[0]}')
-            store = NormStore(np.unique(np.concatenate([tb['df']['key'].values for tb in tables])))
+            store = NormStore(np.unique(tb['df']['key'].values))
             log(f'reading {len(paths)} members')
-            store.load(paths + list(tests) + list(admit), jobs=jobs)
+            store.load(paths, jobs=jobs)
+            member_stats(tb, store, paths)
             src = {}
             pr = read_prior(prior, src) if prior else None
             if prior:
                 log(f"prior {src['path']}, md5 {src['md5']}")
-            out = run_qc(paths, [sx[p] for p in paths], tables, store, read_bed(par_bed), min_samples=min_samples,
-                         prior=pr, B=boot, seed=seed, n_pca=pca_probes, tests=tests,
-                         admits=admit, admit_sex=admit_sex or {})
+            out = run_qc(paths, [sx[p] for p in paths], [tb], store, read_bed(par_bed), min_samples=min_samples,
+                         prior=pr, B=boot, seed=seed, n_pca=pca_probes, cf=capture_floor)
             out['res']['prior'] = src or None
-            if cmp is not None:
-                out['res']['compare'] = cmp[0]
             d = os.path.dirname(out_prefix)
             if d:
                 os.makedirs(d, exist_ok=True)
-            write_outputs(out_prefix, out, cmp)
+            write_outputs(out_prefix, out)
             return dict(out['res']['status'])
     finally:
         VERBOSE = old_v
 
 
+SCREEN_COLS = ['sample', 'verdict', 'reasons', 'noise_ratio', 'noise', 'ref_noise', 'missing_frac', 'n_used',
+               'n_missing', 'n_capped', 'sex_inferred', 'sex_basis', 'x_l2', 'y_l2', 'pon_sex', 'input', 'one_share',
+               'n_probes_file', 'pon', 'norm', 'note']
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--input_list', help='panel: one raw .norm path per line (omit for --compare alone)')
-    ap.add_argument('--sample_sex', help='panel: <path>\\t<M|F> per member')
-    ap.add_argument('--par_bed', help='PAR bed (config/hs38.PAR.bed)')
-    ap.add_argument('--pon', required=True, nargs='+', help='.pon.tsv table(s) built from this panel')
-    ap.add_argument('--out', required=True, help='output prefix')
-    ap.add_argument('--min_samples', type=int, default=None, help='the --min_samples the PoN was built with')
-    ap.add_argument('--prior', default=None, help='population CNV prior VCF (INFO END, AN, DEL_AC, DUP_AC), or '
-                    'BUNDLE/MEMBER, a VCF member of a model bundle, e.g. CNV_WES.bundle/cnvprior.vcf.gz')
-    ap.add_argument('--test', nargs='*', default=[], help='raw .norm files of samples to check against the panel')
-    ap.add_argument('--admit', nargs='*', default=[], help='raw .norm files of called samples to check for the pool')
-    ap.add_argument('--admit_sex', nargs='*', default=[], help='M/F per --admit sample, or a path<TAB>M|F file')
-    ap.add_argument('--compare', nargs='+', default=None, help='previous .pon.tsv table(s) to compare --pon with')
-    ap.add_argument('--bootstrap', type=int, default=200)
-    ap.add_argument('--seed', type=int, default=20261110)
-    ap.add_argument('--pca_probes', type=int, default=20000)
-    ap.add_argument('--jobs', type=int, default=1, help='processes for reading the .norm files')
+    ap.add_argument('--screen', metavar='SAMPLE.norm', help="a called sample's depth file: its call's own .norm "
+                    '(PoN-divided) or the depth file of a run without --pon_file (PoN-free)')
+    ap.add_argument('--pon', required=True, nargs='+', metavar='PON', help='binary PoN: with --screen the one the '
+                    'call used; with --compare the new PoN(s), male and/or female')
+    ap.add_argument('--compare', nargs='+', metavar='OLD', help='the previous binary PoN(s) to compare --pon with')
+    ap.add_argument('--out', help='output prefix: PREFIX.tsv for --screen (optional); required with --compare')
     a = ap.parse_args()
-    if a.input_list:
-        if not (a.sample_sex and a.par_bed):
-            sys.exit('--input_list needs --sample_sex and --par_bed')
-        try:
-            run_build_qc(a.input_list, a.sample_sex, a.par_bed, a.pon, a.min_samples, prior=a.prior, out_prefix=a.out,
-                         boot=a.bootstrap, jobs=a.jobs, seed=a.seed, pca_probes=a.pca_probes, tests=a.test,
-                         admit=a.admit, admit_sex=read_admit_sex(a.admit_sex, a.admit), compare=a.compare, verbose=True)
-        except ValueError as e:
-            sys.exit(str(e))
-        with open(a.out + '.txt') as f:
-            print(f.read(), end='')
-        return
-    if not a.compare:
-        sys.exit('--input_list (with --sample_sex and --par_bed) or --compare is required')
-    d = os.path.dirname(a.out)
+    if bool(a.screen) == bool(a.compare):
+        ap.error('give --screen or --compare')
+    if a.screen and len(a.pon) != 1:
+        ap.error('--screen takes one --pon: the PoN the call used')
+    if a.compare and not a.out:
+        ap.error('--compare needs --out')
+    d = os.path.dirname(a.out) if a.out else ''
+    try:
+        if a.screen:
+            with warnings.catch_warnings(), np.errstate(all='ignore'):
+                warnings.simplefilter('ignore', RuntimeWarning)
+                r = screen(a.screen, read_pon(a.pon[0]))
+            if d:
+                os.makedirs(d, exist_ok=True)
+            if a.out:
+                pd.DataFrame([r], columns=SCREEN_COLS).to_csv(a.out + '.tsv', sep='\t', index=False, float_format='%.5f')
+            print(screen_line(r))
+            return
+        new_t = sorted((read_pon(p) for p in a.pon), key=lambda tb: tb['sex'] != 'M')
+        old_t = sorted((read_pon(p) for p in a.compare), key=lambda tb: tb['sex'] != 'M')
+    except (OSError, ValueError) as e:
+        sys.exit(f'pon_qc.py: {e}')
+    bysex = {tb['sex']: tb for tb in old_t}
+    xy = [(tb, bysex[tb['sex']]) for tb in new_t if tb['sex'] in bysex]
+    cmp = compare_tables(new_t[0], old_t[0], T, xy)
     if d:
         os.makedirs(d, exist_ok=True)
-    new_t = sorted((read_pon_tsv(p) for p in a.pon), key=lambda tb: tb['hdr'].get('ratio_sex') != 'M')
-    old_t = sorted((read_pon_tsv(p) for p in a.compare), key=lambda tb: tb['hdr'].get('ratio_sex') != 'M')
-    bysex = {tb['hdr'].get('ratio_sex', ''): tb for tb in old_t}
-    xy = [(tb, bysex[tb['hdr'].get('ratio_sex', '')]) for tb in new_t if tb['hdr'].get('ratio_sex', '') in bysex]
-    cmp = compare_tables(new_t[0], old_t[0], T, xy)
     write_compare(a.out, cmp)
     with open(a.out + '.json', 'w') as f:
         json.dump(jsonable({'compare': cmp[0]}), f, indent=1)
